@@ -1,0 +1,41 @@
+import { Board } from '../Board/Board';
+import { PlayerPanel } from '../PlayerPanel/PlayerPanel';
+import { ActionBar } from '../ActionBar/ActionBar';
+import { LogPanel } from '../LogPanel/LogPanel';
+import { CardModal } from '../CardModal/CardModal';
+import { WinScreen } from '../WinScreen/WinScreen';
+import { SoundEffects } from '../SoundEffects/SoundEffects';
+import { useAIPlayer } from '../../hooks/useAIPlayer';
+import styles from './GameScreen.module.css';
+
+export function GameScreen() {
+  // Hook to drive AI turns
+  useAIPlayer();
+
+  return (
+    <div className={styles.screen}>
+      <div className={styles.mainLayout}>
+        <div className={styles.boardArea}>
+          <Board />
+          <div className={styles.legend}>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#27ae60' }} />发工资</div>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#3498db' }} />机会</div>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#f1c40f' }} />市场</div>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#e74c3c' }} />额外支出</div>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#9b59b6' }} />慈善</div>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#ff9ff3' }} />生孩子</div>
+            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#7f8c8d' }} />结算</div>
+          </div>
+        </div>
+        <div className={styles.sideArea}>
+          <PlayerPanel />
+        </div>
+      </div>
+      <ActionBar />
+      <LogPanel />
+      <CardModal />
+      <WinScreen />
+      <SoundEffects />
+    </div>
+  );
+}

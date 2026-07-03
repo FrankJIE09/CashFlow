@@ -1,0 +1,118 @@
+import { useCallback } from 'react';
+import type { Difficulty, GameConfig } from '../types/game';
+import { useGame } from '../context/GameContext';
+import { rollDice, rollTwoDice } from '../utils/random';
+
+export function useGameActions() {
+  const { dispatch } = useGame();
+
+  const setupGame = useCallback((config: GameConfig) => {
+    dispatch({ type: 'SETUP_GAME', payload: config });
+  }, [dispatch]);
+
+  const restartGame = useCallback(() => {
+    dispatch({ type: 'RESTART_GAME' });
+  }, [dispatch]);
+
+  const rollAndMove = useCallback((isFastTrack: boolean, hasCharity: boolean) => {
+    let dice: number;
+    if (isFastTrack || hasCharity) {
+      const [d1, d2] = rollTwoDice();
+      // 对于双骰子，选择较大的值（简单策略）
+      dice = Math.max(d1, d2);
+    } else {
+      dice = rollDice();
+    }
+    dispatch({ type: 'ROLL_DICE', payload: { dice } });
+    // 移动动画后调用
+    setTimeout(() => {
+      dispatch({ type: 'MOVE_PLAYER' });
+    }, 500);
+  }, [dispatch]);
+
+  const rollSingleDice = useCallback(() => {
+    const dice = rollDice();
+    dispatch({ type: 'ROLL_DICE', payload: { dice } });
+  }, [dispatch]);
+
+  const movePlayer = useCallback(() => {
+    dispatch({ type: 'MOVE_PLAYER' });
+  }, [dispatch]);
+
+  const buyAsset = useCallback(() => {
+    dispatch({ type: 'BUY_ASSET' });
+  }, [dispatch]);
+
+  const buyDiscountedAsset = useCallback(() => {
+    dispatch({ type: 'BUY_DISCOUNTED_ASSET' });
+  }, [dispatch]);
+
+  const declineCard = useCallback(() => {
+    dispatch({ type: 'DECLINE_CARD' });
+  }, [dispatch]);
+
+  const payDoodad = useCallback(() => {
+    dispatch({ type: 'PAY_DOODAD' });
+  }, [dispatch]);
+
+  const donateCharity = useCallback((donate: boolean) => {
+    dispatch({ type: 'DONATE_CHARITY', payload: { donate } });
+  }, [dispatch]);
+
+  const applyMarketEffect = useCallback(() => {
+    dispatch({ type: 'APPLY_MARKET_EFFECT' });
+  }, [dispatch]);
+
+  const drawDiscountedOpportunity = useCallback(() => {
+    dispatch({ type: 'DRAW_DISCOUNTED_OPPORTUNITY' });
+  }, [dispatch]);
+
+  const endTurn = useCallback(() => {
+    dispatch({ type: 'END_TURN' });
+  }, [dispatch]);
+
+  const takeLoan = useCallback((amount: number) => {
+    dispatch({ type: 'TAKE_LOAN', payload: { amount } });
+  }, [dispatch]);
+
+  const sellAsset = useCallback((assetId: string, multiplier: number) => {
+    dispatch({ type: 'SELL_ASSET', payload: { assetId, multiplier } });
+  }, [dispatch]);
+
+  const declareBankruptcy = useCallback(() => {
+    dispatch({ type: 'DECLARE_BANKRUPTCY' });
+  }, [dispatch]);
+
+  return {
+    setupGame,
+    restartGame,
+    rollAndMove,
+    rollSingleDice,
+    movePlayer,
+    buyAsset,
+    buyDiscountedAsset,
+    declineCard,
+    payDoodad,
+    donateCharity,
+    applyMarketEffect,
+    drawDiscountedOpportunity,
+    endTurn,
+    takeLoan,
+    sellAsset,
+    declareBankruptcy,
+  };
+}
+
+export function useCreateGameConfig(
+  humanName: string,
+  professionId: string,
+  aiCount: number,
+  aiDifficulty: Difficulty
+): GameConfig {
+  return {
+    humanPlayerName: humanName || '玩家',
+    humanProfessionId: professionId,
+    aiCount,
+    aiDifficulty,
+  };
+}

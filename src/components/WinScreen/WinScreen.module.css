@@ -1,0 +1,120 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(74, 74, 74, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  background: linear-gradient(145deg, #fff 0%, #FFF8F0 100%);
+  border-radius: 32px;
+  padding: 44px;
+  width: 100%;
+  max-width: 540px;
+  text-align: center;
+  box-shadow:
+    0 12px 0 rgba(0, 0, 0, 0.08),
+    0 24px 60px rgba(0, 0, 0, 0.25);
+  border: 4px solid rgba(255, 230, 109, 0.4);
+  animation: popIn 0.5s ease-out;
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.7) translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.trophy {
+  font-size: 80px;
+  margin-bottom: 16px;
+  animation: bounce 1s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-12px) rotate(-5deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-8px) rotate(5deg); }
+}
+
+.title {
+  margin: 0;
+  font-size: 38px;
+  color: var(--color-primary-dark);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.winner {
+  margin: 14px 0 32px 0;
+  font-size: 24px;
+  color: var(--color-success-dark);
+  font-weight: 800;
+}
+
+.stats {
+  background: #FFF8F0;
+  border-radius: 20px;
+  padding: 24px;
+  margin-bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 3px solid rgba(0, 0, 0, 0.05);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 2px dashed #FFE0D0;
+  font-size: 15px;
+}
+
+.stat:last-child {
+  border-bottom: none;
+}
+
+.stat span:first-child {
+  color: var(--color-text-light);
+  font-weight: 700;
+}
+
+.stat span:last-child {
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.restartButton {
+  padding: 16px 48px;
+  background: var(--color-success);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 6px 0 var(--color-success-dark);
+  transition: all 0.1s;
+}
+
+.restartButton:hover {
+  background: var(--color-success-dark);
+  transform: translateY(-2px);
+}
+
+.restartButton:active {
+  transform: translateY(6px);
+  box-shadow: 0 0 0 var(--color-success-dark);
+}

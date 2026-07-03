@@ -1,0 +1,73 @@
+.panel {
+  padding: 16px 20px;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-white);
+}
+
+.title {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: var(--color-text);
+  border-bottom: 2px dashed #FFE0E0;
+  padding-bottom: 8px;
+}
+
+.logList {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty {
+  color: var(--color-text-light);
+  font-weight: 700;
+  font-style: italic;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.logItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #FFF8F8;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.message {
+  flex: 1;
+  color: var(--color-text);
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.time {
+  color: var(--color-text-light);
+  font-size: 11px;
+  flex-shrink: 0;
+  font-weight: 700;
+}

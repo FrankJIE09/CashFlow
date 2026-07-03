@@ -1,0 +1,243 @@
+.actionBar {
+  padding: 18px 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+  background: var(--color-white);
+}
+
+.turnInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.currentPlayer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  color: var(--color-text);
+  font-size: 16px;
+}
+
+.colorDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.playerName {
+  font-size: 16px;
+}
+
+.phase {
+  font-size: 12px;
+  color: var(--color-text-light);
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rollArea {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+}
+
+.rollButton {
+  padding: 14px 28px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  border-radius: 18px;
+  box-shadow: 0 5px 0 var(--color-primary-dark);
+  position: relative;
+  transition: all 0.1s;
+}
+
+.rollButton:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+  transform: translateY(-2px);
+}
+
+.rollButton:active:not(:disabled) {
+  transform: translateY(5px);
+  box-shadow: 0 0 0 var(--color-primary-dark);
+}
+
+.badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--color-accent);
+  color: var(--color-text);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 800;
+  box-shadow: 0 2px 0 var(--color-accent-dark);
+}
+
+.diceContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.endButton {
+  padding: 14px 24px;
+  background: var(--color-secondary);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  border-radius: 18px;
+  box-shadow: 0 5px 0 var(--color-secondary-dark);
+  transition: all 0.1s;
+}
+
+.endButton:hover:not(:disabled) {
+  background: var(--color-secondary-dark);
+  transform: translateY(-2px);
+}
+
+.endButton:active:not(:disabled) {
+  transform: translateY(5px);
+  box-shadow: 0 0 0 var(--color-secondary-dark);
+}
+
+.loanSection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFF8F0;
+  padding: 8px 12px;
+  border-radius: 16px;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.loanInput {
+  width: 90px;
+  padding: 10px 12px;
+  border: 2px solid #FFE0D0;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-text);
+}
+
+.loanButton {
+  padding: 10px 18px;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 14px;
+  box-shadow: 0 4px 0 #E0A06A;
+  transition: all 0.1s;
+}
+
+.loanButton:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-2px);
+}
+
+.loanButton:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 #E0A06A;
+}
+
+.loanInfo {
+  font-size: 12px;
+  color: var(--color-text-light);
+  font-weight: 700;
+}
+
+.statusBar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.statusItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 700;
+  background: #FFF8F0;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.statusIcon {
+  font-size: 16px;
+}
+
+.positive {
+  background: #E8F8E8;
+  color: #2A9D2A;
+  border-color: #B8E8B8;
+}
+
+.negative {
+  background: #FFEBEB;
+  color: #D44;
+  border-color: #FFD0D0;
+}
+
+.feedbackOverlay {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.feedbackIcon {
+  font-size: 56px;
+  display: block;
+  animation: feedbackBounce 1s ease-in-out;
+}
+
+@keyframes feedbackBounce {
+  0% { transform: translateY(0) scale(0.5); opacity: 0; }
+  30% { transform: translateY(-30px) scale(1.3); opacity: 1; }
+  60% { transform: translateY(-10px) scale(1.1); opacity: 1; }
+  100% { transform: translateY(-40px) scale(1); opacity: 0; }
+}
+
+@media (max-width: 768px) {
+  .actionBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions {
+    justify-content: center;
+  }
+
+  .statusBar {
+    justify-content: center;
+  }
+
+  .feedbackOverlay {
+    display: none;
+  }
+}

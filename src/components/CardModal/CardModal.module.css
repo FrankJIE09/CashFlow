@@ -1,0 +1,251 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(74, 74, 74, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: var(--color-white);
+  border-radius: 28px;
+  width: 100%;
+  max-width: 500px;
+  padding: 30px;
+  box-shadow:
+    0 12px 0 rgba(0, 0, 0, 0.08),
+    0 24px 60px rgba(0, 0, 0, 0.2);
+  border: 4px solid rgba(0, 0, 0, 0.05);
+  animation: cardPop 0.4s ease-out;
+}
+
+@keyframes cardPop {
+  from {
+    opacity: 0;
+    transform: translateY(40px) rotate(-3deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+}
+
+.cardType {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 16px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.15);
+}
+
+.title {
+  margin: 0 0 12px 0;
+  font-size: 26px;
+  color: var(--color-text);
+}
+
+.description {
+  margin: 0 0 22px 0;
+  color: var(--color-text-light);
+  line-height: 1.6;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.assetDetails {
+  background: #FFF8F0;
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 22px;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.assetRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 2px dashed #FFE0D0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.assetRow:last-child {
+  border-bottom: none;
+}
+
+.highlight {
+  color: var(--color-primary-dark);
+  font-weight: 800;
+}
+
+.positive {
+  color: var(--color-success-dark);
+  font-weight: 800;
+}
+
+.discountTag {
+  background: var(--color-danger);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 8px;
+}
+
+.costInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #FFEBEB;
+  border-radius: 14px;
+  margin-bottom: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.cost {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--color-danger-dark);
+}
+
+.recurringInfo {
+  color: var(--color-text-light);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.marketInfo {
+  background: #FFF8F0;
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.marketMultipliers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.marketMultipliers span {
+  background: #fff;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+  font-size: 12px;
+}
+
+.emptyAssets {
+  color: var(--color-text-light);
+  font-weight: 700;
+  font-style: italic;
+  padding: 18px;
+  text-align: center;
+  background: #FFF8F0;
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+
+.assetList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.assetListItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px;
+  background: #FFF8F0;
+  border-radius: 14px;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.assetListName {
+  font-weight: 800;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.assetListMeta {
+  font-size: 12px;
+  color: var(--color-text-light);
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.primaryButton,
+.secondaryButton {
+  padding: 12px 24px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  transition: all 0.1s;
+}
+
+.primaryButton {
+  background: var(--color-success);
+  color: #fff;
+  box-shadow: 0 4px 0 var(--color-success-dark);
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--color-success-dark);
+  transform: translateY(-2px);
+}
+
+.primaryButton:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--color-success-dark);
+}
+
+.primaryButton:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.secondaryButton {
+  background: #FFF0F0;
+  color: var(--color-text);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.08);
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+.secondaryButton:hover {
+  background: #FFE0E0;
+  transform: translateY(-2px);
+}
+
+.secondaryButton:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0.08);
+}

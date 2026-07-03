@@ -1,0 +1,139 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
+
+:root {
+  /* 卡通 Q 版马卡龙色系 */
+  --color-bg: #FFF8F0;
+  --color-bg-soft: #FFF0E0;
+  --color-primary: #FF8FA3;
+  --color-primary-dark: #E76D83;
+  --color-secondary: #8FD3FF;
+  --color-secondary-dark: #5CABE0;
+  --color-accent: #FFE66D;
+  --color-accent-dark: #E6C84B;
+  --color-success: #77DD77;
+  --color-success-dark: #55B955;
+  --color-danger: #FF9AA2;
+  --color-danger-dark: #E07A82;
+  --color-warning: #FFBC8F;
+  --color-purple: #CBA4E9;
+  --color-text: #4A4A4A;
+  --color-text-light: #7A7A7A;
+  --color-white: #FFFFFF;
+  --color-shadow: rgba(74, 74, 74, 0.15);
+
+  /* 格子类型颜色 */
+  --space-payday: #77DD77;
+  --space-opportunity: #8FD3FF;
+  --space-market: #FFE66D;
+  --space-doodad: #FF9AA2;
+  --space-charity: #CBA4E9;
+  --space-baby: #FFB7E6;
+  --space-settlement: #B5B5B5;
+
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+p {
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input, select {
+  font-family: inherit;
+}
+
+/* 通用卡通按钮 */
+.cartoon-button {
+  border-radius: 16px;
+  font-weight: 700;
+  box-shadow: 0 4px 0 var(--color-shadow);
+  transition: all 0.1s ease;
+}
+
+.cartoon-button:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--color-shadow);
+}
+
+.cartoon-button:disabled {
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+/* 通用卡片 */
+.cartoon-card {
+  background: var(--color-white);
+  border-radius: 20px;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.08);
+  border: 2px solid rgba(0, 0, 0, 0.05);
+}
+
+/* 浮动动画 */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
+
+@keyframes coinFloat {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
+}
+
+@keyframes sadFace {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  50% { transform: translateY(-10px) scale(1.1); }
+  100% { transform: translateY(0) scale(1); opacity: 0; }
+}

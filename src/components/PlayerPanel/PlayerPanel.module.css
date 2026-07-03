@@ -1,0 +1,247 @@
+.panel {
+  padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--color-white);
+}
+
+.header {
+  border-bottom: 2px dashed #FFE0E0;
+  padding-bottom: 12px;
+}
+
+.title {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: var(--color-primary-dark);
+}
+
+.playerTabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  background: #FFF0F0;
+  border: 2px solid #FFE0E0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  background: #FFE0E0;
+  transform: translateY(-2px);
+}
+
+.activeTab {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary-dark);
+  box-shadow: 0 3px 0 var(--color-primary-dark);
+}
+
+.tabDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.characterCard {
+  background: linear-gradient(145deg, #FFF8F0 0%, #FFF0F0 100%);
+  border-radius: 20px;
+  padding: 20px;
+  border: 2px solid rgba(255, 143, 163, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.avatarSection {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.15), 0 6px 16px rgba(0, 0, 0, 0.15);
+  border: 3px solid #fff;
+  animation: float 2.5s ease-in-out infinite;
+}
+
+.characterInfo {
+  flex: 1;
+}
+
+.characterName {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.profession {
+  font-size: 14px;
+  color: var(--color-text-light);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fastTrack {
+  background: #FFF4C2;
+  color: #B8860B;
+}
+
+.bankrupt {
+  background: #FFD4D4;
+  color: #C44;
+}
+
+.charity {
+  background: #F0D4FF;
+  color: #7B3FA0;
+}
+
+.baby {
+  background: #FFD9EC;
+  color: #C44E80;
+}
+
+.moneyDisplay {
+  position: relative;
+  background: linear-gradient(145deg, #FFF 0%, #FFF8F0 100%);
+  border-radius: 16px;
+  padding: 16px;
+  text-align: center;
+  border: 3px solid var(--color-accent);
+  box-shadow: 0 4px 0 var(--color-accent-dark), inset 0 0 20px rgba(255, 230, 109, 0.2);
+  overflow: hidden;
+}
+
+.moneyLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-light);
+  margin-bottom: 4px;
+}
+
+.moneyValue {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.cashPulse {
+  animation: cashPulse 0.5s ease-in-out;
+}
+
+@keyframes cashPulse {
+  0% { transform: scale(1); color: var(--color-text); }
+  50% { transform: scale(1.15); color: var(--color-success); }
+  100% { transform: scale(1); color: var(--color-text); }
+}
+
+.floatingIcon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 36px;
+  pointer-events: none;
+}
+
+.progressSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.statItem {
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 2px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.04);
+}
+
+.statIcon {
+  font-size: 20px;
+}
+
+.statLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-light);
+}
+
+.statValue {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.detailButton {
+  width: 100%;
+  padding: 14px;
+  background: var(--color-secondary);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 16px;
+  box-shadow: 0 4px 0 var(--color-secondary-dark);
+  transition: all 0.1s;
+}
+
+.detailButton:hover {
+  background: var(--color-secondary-dark);
+}
+
+.detailButton:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--color-secondary-dark);
+}
