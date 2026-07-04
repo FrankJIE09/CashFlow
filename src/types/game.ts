@@ -42,7 +42,6 @@ export type CardType = 'opportunity' | 'market' | 'doodad';
 export type OpportunityKind = 'smallDeal' | 'bigDeal';
 
 export type SpaceType =
-  | 'payday'
   | 'opportunity'
   | 'market'
   | 'doodad'
@@ -51,6 +50,9 @@ export type SpaceType =
   | 'marriage'
   | 'settlement'
   | 'promotion'; // 【新增】v3.2 升迁格
+
+/** 【新增】v3.8 玩家性别 */
+export type PlayerGender = 'male' | 'female';
 
 /** 【新增】v3.1 婚恋状态；ineligible = 二次离婚后永久不可再婚 */
 export type MarriageStatus = 'single' | 'married' | 'divorced' | 'ineligible';
@@ -74,7 +76,6 @@ export interface CareerEvent {
   unemploymentTurns?: number;
   happinessDelta?: number;
   highPayBoostPct?: number;
-  highPayGapTurns?: number;
   highPayLayoffRiskTurns?: number;
   stableSalaryCutPct?: number;
   transitionSalaryRatio?: number;
@@ -98,7 +99,10 @@ export type MarketEffectType =
   | 'sectorBoom'
   | 'macroEvent'
   | 'unemployment'
-  | 'reemployment';
+  | 'reemployment'
+  | 'stockPeEvent' // 【新增】v3.6 股票 PE 事件
+  | 'inflationEvent' // 【新增】v3.7 通胀/通缩事件
+  | 'childSubsidyUp'; // 【新增】v3.8 育儿补贴上调
 
 export type EventCategory =
   | 'economicCycle'
@@ -192,6 +196,16 @@ export interface Asset {
   purchaseRound?: number;
   /** 【新增】v3.1 已持有月数（每经过一次发工资 +1） */
   heldMonths?: number;
+  /** 【新增】v3.6 行业中枢 PE（固定值，如 bank=6, tech=45） */
+  basePe?: number;
+  /** 【新增】v3.6 实时动态 PE */
+  currentPe?: number;
+  /** 【新增】v3.6 基础内在价值 = yearDivPerShare × basePe */
+  intrinsicPrice?: number;
+  /** 【新增】v3.6 买入时的成本单价 */
+  originalSinglePrice?: number;
+  /** 【新增】v3.6 买入时的 PE */
+  buyPe?: number;
   metadata?: AssetMetadata;
 }
 
@@ -227,6 +241,8 @@ export interface CustomProfessionConfig {
 export interface Player {
   id: string;
   name: string;
+  /** 【新增】v3.8 玩家性别 */
+  gender: PlayerGender;
   professionId: string;
   /** 自定义职业名称（professionId === 'custom' 时使用） */
   customProfessionName?: string;
@@ -264,6 +280,8 @@ export interface Player {
   unemploymentTurnsRemaining?: number;
   /** 【新增】v3.2 年龄与退休 */
   age: number;
+  /** 当前年龄内的月数（0–11），每掷骰 +1 */
+  ageMonths?: number;
   baseStartAge: number;
   /** null 或 999 表示无强制退休（自由职业） */
   retireStandardAge: number | null;
@@ -281,8 +299,12 @@ export interface Player {
   layoffRiskModifier?: number;
   /** 【新增】v3.4 临时裁员风险上升剩余回合 */
   layoffRiskBoostTurnsRemaining?: number;
-  /** 【新增】v3.4 跳槽空窗期（无工资但非失业） */
-  salaryGapTurnsRemaining?: number;
+  /** 【新增】v3.5 连续失业月数（用于婚姻惩罚递增） */
+  consecutiveUnemployedTurns?: number;
+  /** 【新增】v3.5 再就业后幸福度疤痕剩余回合 */
+  postEmploymentScarTurnsRemaining?: number;
+  /** 【新增】v3.5 私自变卖资产标记（离婚分割 40%） */
+  hasSecretLiquidation?: boolean;
   /** 【新增】v3.4 职业转型进度 */
   careerTransitionTurnsRemaining?: number;
   careerTransitionBaseSalary?: number;
@@ -293,6 +315,26 @@ export interface Player {
   partnerUnemployedTurnsRemaining?: number;
   tempPerChildBoost?: number;
   tempExpenseTurnsRemaining?: number;
+  /** 【新增】v3.8 每个孩子的年龄（月数），出生时为 0，满 36 月（3 岁）移除 */
+  childAges: number[];
+  /** 【新增】v3.8 女性产假剩余月数 */
+  maternityLeaveRemaining: number;
+  /** 【新增】v3.8 女性产假月补贴 */
+  maternitySubsidy: number;
+  /** 【新增】v3.8 已婚时家庭月总收入（player.salary + partnerSalary） */
+  familyIncome?: number;
+  /** 【新增】v3.8 结婚时的年龄月数（用于推算子嗣年龄） */
+  marriageAgeMonths?: number;
+  /** 【新增】v3.8 是否持有母婴医疗保险（boost 生育补贴 +50%） */
+  hasMedicalInsuranceCard?: boolean;
+  /** 【新增】v3.7 玩家已购买保险类型列表 */
+  insurances: string[];
+  /** 【新增】v3.7 再婚次数 */
+  remarriageCount: number;
+  /** 【新增】v3.7 DINK 养老支出 */
+  dinkElderlyCareExpense: number;
+  /** 【新增】v3.7 高负债幸福惩罚累计值 */
+  highDebtHappinessPenalty: number;
 }
 
 export interface Space {
@@ -335,6 +377,16 @@ export interface MarketEffect {
   discountRate?: number;
   sector?: string;
   assetImpacts?: Record<string, AssetImpact>;
+  /** 【新增】v3.7 通胀/通缩幅度 */
+  inflationDelta?: number;
+  /** 【新增】v3.6 PE 事件：对股票 currentPe 做百分比调整 */
+  stockPeDelta?: number;
+  /** 【新增】v3.6 PE 事件：对行业 basePe 做百分比调整 */
+  sectorBasePeDelta?: number;
+  /** 【新增】v3.6 个股买断溢价比例（如 1.3 = 130%溢价收购） */
+  buyoutPremium?: number;
+  /** 【新增】v3.7 保险覆盖（已存在但统一添加） */
+  insuranceCoverage?: { medical?: number; dental?: number; life?: number };
 }
 
 export interface MarketCard extends BaseCard {
@@ -353,6 +405,18 @@ export interface DoodadCard extends BaseCard {
   tempPerChildBoost?: number;
   tempExpenseTurns?: number;
   isFamilyEvent?: boolean;
+  /** 【新增】v3.7 医疗事件标记 */
+  isMedicalEvent?: boolean;
+  /** 【新增】v3.7 保险类型 */
+  insuranceType?: 'medical' | 'dental' | 'life' | 'maternal';
+  /** 【新增】v3.7 保险覆盖率 */
+  coverageRatio?: number;
+  /** 【新增】v3.7 自付免赔额 */
+  deductible?: number;
+  /** 【新增】v3.7 保险月保费 */
+  insuranceMonthlyPremium?: number;
+  /** 【新增】v3.8 仅特定性别触发（如产后康复仅女性） */
+  genderRequired?: 'male' | 'female';
 }
 
 export type Card = OpportunityCard | MarketCard | DoodadCard;
@@ -413,10 +477,12 @@ export interface GameState {
   promotionOffer?: { salaryBoostPct: number; cost: number } | null;
   /** 【新增】v3.4 职业事件（升迁格随机池） */
   careerEvent?: CareerEvent | null;
-  /** 待发工资弹窗：落点 payday 时展示月现金流，确认后再结算 */
-  pendingPaydayAmount?: number | null;
   /** 待税务结算弹窗：确认后再扣款 */
   pendingSettlement?: { amount: number; isAnnual: boolean } | null;
+  /** 【新增】v3.5 强制资产变卖（现金耗尽且月现金流为负） */
+  pendingLiquidation?: boolean;
+  /** 【新增】v3.5 月现金流结算弹窗（负现金流时提示变卖/贷款） */
+  pendingCashFlowSettlement?: { cashFlow: number } | null;
   /** 【新增】v3.3 自动测试模式 */
   testMode?: boolean;
   testMaxRounds?: number;
@@ -428,6 +494,8 @@ export interface GameState {
 export interface GameConfig {
   humanPlayerName: string;
   humanProfessionId: string;
+  /** 【新增】v3.8 玩家性别 */
+  humanGender?: PlayerGender;
   /** 自定义职业数据（humanProfessionId === 'custom' 时必填） */
   customProfession?: CustomProfessionConfig;
   /** 【v3.0】开局所选城市 */
@@ -470,7 +538,6 @@ export type GameAction =
   | { type: 'CHOOSE_MARRIAGE'; payload: { marry: boolean } }
   | { type: 'CHOOSE_PREGNANCY_PATH'; payload: { path: PregnancyPath } }
   | { type: 'CONFIRM_RETIREMENT' }
-  | { type: 'CONFIRM_PAYDAY' }
   | { type: 'CONFIRM_SETTLEMENT' }
   | { type: 'CHOOSE_PROMOTION'; payload: { accept: boolean; jobHopChoice?: 'highPay' | 'stable' } }
   | { type: 'RESOLVE_MARRIAGE_GRID'; payload: { counseling?: boolean } }
@@ -481,5 +548,8 @@ export type GameAction =
   | { type: 'TAKE_LOAN'; payload: { amount: number } }
   | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
   | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
+  | { type: 'LIQUIDATE_ASSET'; payload: { assetId: string; isSecretSell: boolean } }
+  | { type: 'CONFIRM_CASH_FLOW_SETTLEMENT' }
   | { type: 'DECLARE_BANKRUPTCY' }
+  | { type: 'MANUAL_SELL_STOCK'; payload: { assetId: string; sellHand: number } }
   | { type: 'STOP_AUTO_TEST' };

@@ -7,7 +7,9 @@ import {
   checkBankruptcy,
   getHighestPriorityDebt,
   getMonthlyCashFlow,
+  getSellableAssets,
   isStockLotAsset,
+  liquidateAssetConsent,
   previewRepayment,
   stockLotBuyCost,
 } from '../utils/financial';
@@ -109,6 +111,8 @@ export function useAIPlayer() {
     if (player.isBankrupt) {
       if (state.phase === 'TURN_END') {
         actions.endTurn();
+      } else if (state.phase === 'CARD_DECISION') {
+        actions.declineCard();
       }
       return;
     }
@@ -120,10 +124,24 @@ export function useAIPlayer() {
         const space = state.spaces[player.position];
         const card = state.currentCard;
 
+        if (state.pendingLiquidation) {
+          const sellable = getSellableAssets(player);
+          if (sellable.length > 0) {
+            const worst = sellable.reduce((prev, curr) =>
+              curr.cashFlow < prev.cashFlow ? curr : prev
+            );
+            actions.liquidateAsset(worst.id, false);
+          }
+          return;
+        }
+
+        if (state.pendingCashFlowSettlement) {
+          actions.confirmCashFlowSettlement();
+          return;
+        }
+
         if (state.pendingLifeEvent === 'retirement') {
           actions.confirmRetirement();
-        } else if (space.type === 'payday' && state.pendingPaydayAmount != null) {
-          actions.confirmPayday();
         } else if (space.type === 'settlement' && state.pendingSettlement) {
           actions.confirmSettlement();
         } else if (space.type === 'promotion' && state.careerEvent) {
@@ -238,6 +256,16 @@ export function useAIPlayer() {
         }
       } else if (state.phase === 'TURN_END') {
         if (player.cash < 0 && !checkBankruptcy(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
+          const sellable = getSellableAssets(player);
+          if (sellable.length > 0) {
+            const best = sellable.reduce((prev, curr) => {
+              const prevProceeds = liquidateAssetConsent(prev, state.marketMultiplier, state.sectorMultiplier).proceeds;
+              const currProceeds = liquidateAssetConsent(curr, state.marketMultiplier, state.sectorMultiplier).proceeds;
+              return currProceeds > prevProceeds ? curr : prev;
+            });
+            actions.liquidateAsset(best.id, false);
+            return;
+          }
           actions.takeLoan(Math.abs(player.cash) + 1000);
           return;
         }

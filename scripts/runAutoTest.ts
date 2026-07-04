@@ -9,9 +9,11 @@ import {
   checkBankruptcy,
   getHighestPriorityDebt,
   getMonthlyCashFlow,
+  getSellableAssets,
   isStockLotAsset,
   previewRepayment,
   stockLotBuyCost,
+  judgeStockValuation,
 } from '../src/utils/financial.ts';
 import { rollDice, rollTwoDice } from '../src/utils/random.ts';
 
@@ -104,6 +106,9 @@ function autoStep(state: GameState): GameState {
     if (state.phase === 'TURN_END') {
       return dispatch(state, { type: 'END_TURN' });
     }
+    if (state.phase === 'CARD_DECISION') {
+      return dispatch(state, { type: 'DECLINE_CARD' });
+    }
     return state;
   }
 
@@ -115,11 +120,22 @@ function autoStep(state: GameState): GameState {
     const space = state.spaces[player.position];
     const card = state.currentCard;
 
+    if (state.pendingLiquidation) {
+      const sellable = getSellableAssets(player);
+      if (sellable.length > 0) {
+        return dispatch(state, {
+          type: 'LIQUIDATE_ASSET',
+          payload: { assetId: sellable[0].id, isSecretSell: false },
+        });
+      }
+      return dispatch(state, { type: 'DECLINE_CARD' });
+    }
+    if (state.pendingCashFlowSettlement) {
+      return dispatch(state, { type: 'CONFIRM_CASH_FLOW_SETTLEMENT' });
+    }
+
     if (state.pendingLifeEvent === 'retirement') {
       return dispatch(state, { type: 'CONFIRM_RETIREMENT' });
-    }
-    if (space.type === 'payday' && state.pendingPaydayAmount != null) {
-      return dispatch(state, { type: 'CONFIRM_PAYDAY' });
     }
     if (space.type === 'settlement' && state.pendingSettlement) {
       return dispatch(state, { type: 'CONFIRM_SETTLEMENT' });
@@ -255,8 +271,31 @@ function autoStep(state: GameState): GameState {
       player.cash < 0 &&
       !checkBankruptcy(player, state.cashFlowMultiplier, state.sectorMultiplier)
     ) {
+      const sellable = getSellableAssets(player);
+      if (sellable.length > 0) {
+        return dispatch(state, {
+          type: 'LIQUIDATE_ASSET',
+          payload: { assetId: sellable[0].id, isSecretSell: false },
+        });
+      }
       return dispatch(state, { type: 'TAKE_LOAN', payload: { amount: Math.abs(player.cash) + 1000 } });
     }
+
+    // 【新增】v3.6 AI 偶尔卖出严重高估股票
+    const overvaluedStock = player.assets.find((a) => {
+      if (!isStockLotAsset(a) || a.basePe == null) return false;
+      const currentPe = a.currentPe ?? a.basePe;
+      const valuation = judgeStockValuation(currentPe, a.basePe);
+      return valuation === 'severeOvervalue' && (a.shareHand ?? 0) >= 1;
+    });
+    if (overvaluedStock && Math.random() < 0.4) {
+      const sellHand = Math.ceil((overvaluedStock.shareHand ?? 0) * 0.5);
+      return dispatch(state, {
+        type: 'MANUAL_SELL_STOCK',
+        payload: { assetId: overvaluedStock.id, sellHand },
+      });
+    }
+
     const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
     const targetDebt = getHighestPriorityDebt(player);
     const repaidThisTurn = state.logs.length > 0 && state.logs[state.logs.length - 1].type === 'repay';
@@ -330,7 +369,6 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
         position: p?.position,
         space: state.spaces[p?.position ?? 0]?.type,
         currentCard: state.currentCard?.type,
-        pendingPayday: state.pendingPaydayAmount,
         pendingSettlement: state.pendingSettlement,
         liabilities: p?.liabilities.length,
       });

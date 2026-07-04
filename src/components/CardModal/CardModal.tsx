@@ -18,8 +18,12 @@ import {
   weddingCost,
   remarriageCost,
   pregnancyMedicalCost,
+  judgeStockValuation,
+  getStockBasePe,
+  getValuationLabel,
+  calcCurrentStockPrice,
 } from '../../utils/financial';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPlayerAge } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
 import styles from './CardModal.module.css';
 
@@ -64,7 +68,7 @@ export function CardModal() {
           <div className={styles.cardType} style={{ backgroundColor: '#FFD700' }}>人生里程碑</div>
           <h2 className={styles.title}>🏖️ 正式退休</h2>
           <p className={styles.description}>
-            你已 {player.age} 岁，达到法定退休年龄。全职工作结束，转入退休生活。
+            你已 {formatPlayerAge(player)}，达到法定退休年龄。全职工作结束，转入退休生活。
           </p>
           <p className={styles.description}>
             养老金约 {formatCurrency(pension)}/月 · 老年医疗约 +{formatCurrency(elderlyMedical)}/月
@@ -136,13 +140,13 @@ export function CardModal() {
                 className={styles.primaryButton}
                 onClick={() => actions.choosePromotion(true, 'highPay')}
               >
-                高薪 Offer（约 {formatCurrency(highSalary)}，{event.highPayGapTurns ?? 2} 回合空窗）
+                高薪 Offer（约 {formatCurrency(highSalary)}，无缝入职，试用期裁员风险↑）
               </button>
               <button
                 className={styles.secondaryButton}
                 onClick={() => actions.choosePromotion(true, 'stable')}
               >
-                稳定岗位（约 {formatCurrency(stableSalary)}，极低裁员风险）
+                稳定岗位（约 {formatCurrency(stableSalary)}，无缝入职，极低裁员）
               </button>
               <button className={styles.secondaryButton} onClick={() => actions.choosePromotion(false)}>
                 暂不跳槽
@@ -329,31 +333,6 @@ export function CardModal() {
             </button>
             <button className={styles.secondaryButton} onClick={() => actions.chooseMarriage(false)}>
               {isRemarriage ? '暂不' : '保持单身'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (space.type === 'payday' && state.pendingPaydayAmount != null) {
-    const amount = state.pendingPaydayAmount;
-    return (
-      <div className={styles.overlay}>
-        <div className={styles.modal}>
-          <div className={styles.cardType} style={{ backgroundColor: '#C8F6D8' }}>月度结算</div>
-          <h2 className={styles.title}>💰 发工资日</h2>
-          <p className={styles.description}>领取本月工资与被动收入，扣除各项支出后的月现金流将入账。</p>
-          <div className={styles.costInfo}>
-            <span>本月现金流：</span>
-            <span className={amount >= 0 ? styles.positive : styles.cost}>
-              {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
-            </span>
-          </div>
-          <p className={styles.description}>负债计期 +1，并触发月度人生事件结算。</p>
-          <div className={styles.actions}>
-            <button className={styles.primaryButton} onClick={() => actions.confirmPayday()}>
-              确认领取
             </button>
           </div>
         </div>
@@ -551,49 +530,60 @@ export function CardModal() {
             ? getAssetTypeLabel(key as AssetType)
             : key;
           return `${label}: ${parts.join(', ')}`;
-        });
+        }      );
 
-    return (
-      <div className={styles.overlay}>
-        <div className={styles.modal}>
-          <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡</div>
-          <h2 className={styles.title}>{card.title}</h2>
-          <p className={styles.description}>{card.description}</p>
-          {effect.eventCategory && (
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡</div>
+            <h2 className={styles.title}>{card.title}</h2>
+            <p className={styles.description}>{card.description}</p>
+            {effect.eventCategory && (
+              <div className={styles.marketInfo}>
+                <div>事件类别: {effect.eventCategory}</div>
+              </div>
+            )}
+            {impactPreview && impactPreview.length > 0 && (
+              <div className={styles.marketInfo}>
+                <div>主要影响</div>
+                <div className={styles.impactList}>
+                  {impactPreview.map((line) => (
+                    <span key={line}>{line}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* 【新增】v3.6 PE 事件公告 */}
+            {effect.type === 'stockPeEvent' && (
+              <div className={styles.valuationHint}>
+                {effect.stockPeDelta != null && (
+                  <span>持仓股票动态PE {effect.stockPeDelta >= 0 ? '+' : ''}{Math.round(effect.stockPeDelta * 100)}%</span>
+                )}
+                {effect.sectorBasePeDelta != null && (
+                  <span>行业中枢PE {effect.sectorBasePeDelta >= 0 ? '+' : ''}{Math.round(effect.sectorBasePeDelta * 100)}%</span>
+                )}
+              </div>
+            )}
             <div className={styles.marketInfo}>
-              <div>事件类别: {effect.eventCategory}</div>
-            </div>
-          )}
-          {impactPreview && impactPreview.length > 0 && (
-            <div className={styles.marketInfo}>
-              <div>主要影响</div>
-              <div className={styles.impactList}>
-                {impactPreview.map((line) => (
-                  <span key={line}>{line}</span>
+              <div>当前市场乘数（部分）</div>
+              <div className={styles.marketMultipliers}>
+                {(['stock', 'bond', 'reit', 'realEstate', 'overseas'] as AssetType[]).map((type) => (
+                  <span key={type}>
+                    {getAssetTypeLabel(type)}: {state.marketMultiplier[type].toFixed(2)}
+                  </span>
                 ))}
               </div>
+              <div>当前利率: {(state.interestRate * 100).toFixed(1)}%</div>
             </div>
-          )}
-          <div className={styles.marketInfo}>
-            <div>当前市场乘数（部分）</div>
-            <div className={styles.marketMultipliers}>
-              {(['stock', 'bond', 'reit', 'realEstate', 'overseas'] as AssetType[]).map((type) => (
-                <span key={type}>
-                  {getAssetTypeLabel(type)}: {state.marketMultiplier[type].toFixed(2)}
-                </span>
-              ))}
+            <div className={styles.actions}>
+              <button className={styles.primaryButton} onClick={actions.applyMarketEffect}>
+                确认
+              </button>
             </div>
-            <div>当前利率: {(state.interestRate * 100).toFixed(1)}%</div>
-          </div>
-          <div className={styles.actions}>
-            <button className={styles.primaryButton} onClick={actions.applyMarketEffect}>
-              确认
-            </button>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
   if (card.type === 'doodad') {
     const shortfall = card.cost - player.cash;
@@ -691,6 +681,28 @@ export function CardModal() {
               {meta.creditRating && <span className={styles.fundTag}>{meta.creditRating}</span>}
               {meta.ytm && <span className={styles.fundTag}>YTM {(meta.ytm * 100).toFixed(1)}%</span>}
               {meta.riskLevel && <span className={styles.fundTag}>风险 {meta.riskLevel}</span>}
+            </div>
+          )}
+
+          {/* 【新增】v3.6 PE 估值提示 */}
+          {isStock && asset.basePe != null && asset.currentPe != null && (
+            <div className={styles.valuationHint}>
+              {(() => {
+                const basePe = getStockBasePe(asset);
+                const currentPe = asset.currentPe ?? basePe;
+                const valuation = judgeStockValuation(currentPe, basePe);
+                const hintLabel = getValuationLabel(valuation);
+                const price = calcCurrentStockPrice(asset);
+                return (
+                  <span>
+                    当前PE {currentPe.toFixed(1)}，行业中枢PE {basePe.toFixed(1)}，标的{hintLabel}
+                    {valuation === 'deepUndervalue' && ' 💎'}
+                    {valuation === 'severeOvervalue' && ' ⚠️'}
+                    {valuation === 'fair' && ' ✅'}
+                    （现价 {formatCurrency(price)}）
+                  </span>
+                );
+              })()}
             </div>
           )}
 

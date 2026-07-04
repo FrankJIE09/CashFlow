@@ -1,7 +1,6 @@
 import type { AssetType } from '../../types/game';
 
 export const SPACE_ICONS: Record<string, string> = {
-  payday: '💰',
   opportunity: '💼',
   market: '📈',
   doodad: '🛍️',

@@ -6,9 +6,11 @@ import {
   checkBankruptcy,
   getHighestPriorityDebt,
   getMonthlyCashFlow,
+  getSellableAssets,
   isStockLotAsset,
   previewRepayment,
   stockLotBuyCost,
+  judgeStockValuation,
 } from '../utils/financial';
 import type { AssetType, Card, Player } from '../types/game';
 
@@ -91,6 +93,8 @@ export function useAutoTestAgent() {
     if (player.isBankrupt) {
       if (state.phase === 'TURN_END') {
         actions.endTurn();
+      } else if (state.phase === 'CARD_DECISION') {
+        actions.declineCard();
       }
       return;
     }
@@ -102,10 +106,21 @@ export function useAutoTestAgent() {
         const space = state.spaces[player.position];
         const card = state.currentCard;
 
+        if (state.pendingLiquidation) {
+          const sellable = getSellableAssets(player);
+          if (sellable.length > 0) {
+            actions.liquidateAsset(sellable[0].id, false);
+          }
+          return;
+        }
+
+        if (state.pendingCashFlowSettlement) {
+          actions.confirmCashFlowSettlement();
+          return;
+        }
+
         if (state.pendingLifeEvent === 'retirement') {
           actions.confirmRetirement();
-        } else if (space.type === 'payday' && state.pendingPaydayAmount != null) {
-          actions.confirmPayday();
         } else if (space.type === 'settlement' && state.pendingSettlement) {
           actions.confirmSettlement();
         } else if (space.type === 'promotion' && state.careerEvent) {
@@ -200,7 +215,25 @@ export function useAutoTestAgent() {
         }
       } else if (state.phase === 'TURN_END') {
         if (player.cash < 0 && !checkBankruptcy(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
+          const sellable = getSellableAssets(player);
+          if (sellable.length > 0) {
+            actions.liquidateAsset(sellable[0].id, false);
+            return;
+          }
           actions.takeLoan(Math.abs(player.cash) + 1000);
+          return;
+        }
+
+        // 【新增】v3.6 AI 偶尔卖出严重高估股票
+        const overvaluedStock = player.assets.find((a) => {
+          if (!isStockLotAsset(a) || a.basePe == null) return false;
+          const currentPe = a.currentPe ?? a.basePe;
+          const valuation = judgeStockValuation(currentPe, a.basePe);
+          return valuation === 'severeOvervalue' && (a.shareHand ?? 0) >= 1;
+        });
+        if (overvaluedStock && Math.random() < 0.4) {
+          const sellHand = Math.ceil((overvaluedStock.shareHand ?? 0) * 0.5);
+          actions.sellStockManually(overvaluedStock.id, sellHand);
           return;
         }
 

@@ -7,6 +7,17 @@
   background: var(--color-white);
 }
 
+.unemploymentBanner {
+  background: linear-gradient(90deg, #ff6b6b22, #ff6b6b44);
+  border: 2px solid #e74c3c;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #c0392b;
+  line-height: 1.4;
+}
+
 .header {
   border-bottom: 2px dashed #FFE0E0;
   padding-bottom: 12px;

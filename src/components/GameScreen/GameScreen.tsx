@@ -3,6 +3,8 @@ import { PlayerPanel } from '../PlayerPanel/PlayerPanel';
 import { ActionBar } from '../ActionBar/ActionBar';
 import { LogPanel } from '../LogPanel/LogPanel';
 import { CardModal } from '../CardModal/CardModal';
+import { LiquidateModal } from '../LiquidateModal/LiquidateModal';
+import { CashFlowSettlementModal } from '../CashFlowSettlementModal/CashFlowSettlementModal';
 import { WinScreen } from '../WinScreen/WinScreen';
 import { SoundEffects } from '../SoundEffects/SoundEffects';
 import { useAIPlayer } from '../../hooks/useAIPlayer';
@@ -22,7 +24,6 @@ export function GameScreen() {
         <div className={styles.boardArea}>
           <Board />
           <div className={styles.legend}>
-            <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#27ae60' }} />发工资</div>
             <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#3498db' }} />机会</div>
             <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#f1c40f' }} />市场</div>
             <div className={styles.legendItem}><span className={styles.dot} style={{ background: '#e74c3c' }} />额外支出</div>
@@ -38,6 +39,8 @@ export function GameScreen() {
       <ActionBar />
       <LogPanel />
       <CardModal />
+      <LiquidateModal />
+      <CashFlowSettlementModal />
       <WinScreen />
       <SoundEffects />
       {state.testMode && <AutoTestPanel />}

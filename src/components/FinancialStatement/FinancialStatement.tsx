@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { DebtType, Liability, Player } from '../../types/game';
 import { useGame } from '../../context/GameContext';
+import { useGameActions } from '../../hooks/useGameActions';
 import { getPlayerProfessionName } from '../../data/professions';
 import {
   DEBT_TYPE_CONFIG,
+  calcEmergencyReserveMonths,
   getAssetMarketValue,
   getAssetTypeLabel,
   getDebtTypeConfig,
@@ -15,13 +17,23 @@ import {
   getPassiveIncomeByAssetType,
   getPassiveIncomeByType,
   getPropertyTax,
+  getSellableAssets,
   getTotalAssetsValue,
   getTotalExpenses,
+  hasSellableAssets,
   inferDebtTypeFromLiability,
+  isStockLotAsset,
+  liquidateAssetConsent,
+  liquidateAssetSecret,
+  calcCurrentStockPrice,
+  judgeStockValuation,
+  getStockBasePe,
+  getValuationLabel,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
 import { RepayModal } from '../RepayModal/RepayModal';
+import { StockTradeModal } from '../StockTradeModal/StockTradeModal';
 import styles from './FinancialStatement.module.css';
 import { ALL_ASSET_TYPES } from '../../types/game';
 
@@ -44,6 +56,7 @@ function groupLiabilitiesByDebtType(liabilities: Liability[]): Map<DebtType, Lia
 
 export function FinancialStatement({ player, onClose, canRepay = false }: FinancialStatementProps) {
   const { state } = useGame();
+  const actions = useGameActions();
   const professionName = getPlayerProfessionName(player);
   const incomeByType = getPassiveIncomeByType(player, state.cashFlowMultiplier, state.sectorMultiplier);
   const incomeByAssetType = getPassiveIncomeByAssetType(player, state.cashFlowMultiplier, state.sectorMultiplier);
@@ -51,7 +64,11 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
   const liabilityGroups = useMemo(() => groupLiabilitiesByDebtType(player.liabilities), [player.liabilities]);
 
   const [repayTarget, setRepayTarget] = useState<Liability | null>(null);
+  const [showStockTrade, setShowStockTrade] = useState(false);
   const monthlyCashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
+  const emergencyReserve = calcEmergencyReserveMonths(player, state.cashFlowMultiplier, state.sectorMultiplier);
+  const sellableAssets = useMemo(() => getSellableAssets(player), [player.assets]);
+  const showLiquidateHighlight = monthlyCashFlow < 0 && hasSellableAssets(player);
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -141,6 +158,12 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
 
           <section className={styles.section}>
             <h3>现金流</h3>
+            <div className={styles.row}>
+              <span>应急储备</span>
+              <span className={emergencyReserve < 3 && monthlyCashFlow < 0 ? styles.negative : undefined}>
+                {emergencyReserve >= 99 ? '∞' : `${emergencyReserve.toFixed(1)} 个月`}
+              </span>
+            </div>
             <div className={`${styles.row} ${styles.total}`}>
               <span>月现金流</span>
               <span
@@ -151,6 +174,11 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                 {formatCurrency(monthlyCashFlow)}
               </span>
             </div>
+            {showLiquidateHighlight && (
+              <p className={styles.liquidateHint}>
+                ⚠️ 月现金流为负，可考虑变卖资产或申请银行贷款缓解。
+              </p>
+            )}
           </section>
 
           <section className={styles.section}>
@@ -182,24 +210,86 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
             {player.assets.length === 0 ? (
               <div className={styles.empty}>暂无资产</div>
             ) : (
-              player.assets.map((asset) => (
-                <div key={asset.id} className={styles.assetRow}>
-                  <div>
-                    {getAssetIcon(asset.type)} {asset.name}
-                    {asset.metadata?.sector && <span className={styles.sectorTag}>{asset.metadata.sector}</span>}
-                  </div>
-                  <div className={styles.assetMeta}>
-                    <span>基础市值 {formatCurrency(asset.marketValue)}</span>
-                    <span>
-                      当前市值{' '}
-                      {formatCurrency(
-                        getAssetMarketValue(asset, state.marketMultiplier[asset.type], state.sectorMultiplier)
+              <>
+                {player.assets.some((a) => isStockLotAsset(a)) && (
+                  <button
+                    className={`${styles.stockTradeBtn} cartoon-button`}
+                    onClick={() => setShowStockTrade(true)}
+                  >
+                    📈 证券交易（自主卖出）
+                  </button>
+                )}
+                {player.assets.map((asset) => {
+                  const canLiquidate = sellableAssets.some((a) => a.id === asset.id);
+                  const consent = canLiquidate
+                    ? liquidateAssetConsent(asset, state.marketMultiplier, state.sectorMultiplier)
+                    : null;
+                  const secret = canLiquidate
+                    ? liquidateAssetSecret(asset, state.marketMultiplier, state.sectorMultiplier)
+                    : null;
+
+                  // v3.6 PE 显示
+                  const isStock = isStockLotAsset(asset);
+                  let peInfo = null;
+                  if (isStock) {
+                    const basePe = getStockBasePe(asset);
+                    const currentPe = asset.currentPe ?? basePe;
+                    const valuation = judgeStockValuation(currentPe, basePe);
+                    const currentPrice = calcCurrentStockPrice(asset);
+                    const buyPrice = asset.originalSinglePrice ?? asset.singlePrice ?? 0;
+                    const profit = currentPrice - buyPrice;
+                    const intrinsicPrice = asset.intrinsicPrice ?? 0;
+                    peInfo = (
+                      <div className={styles.peInfo}>
+                        <span>行业中枢PE {basePe.toFixed(1)} | 动态PE {currentPe.toFixed(1)}</span>
+                        <span className={`${styles.valuationTag} ${styles[valuation]}`}>
+                          {getValuationLabel(valuation)}
+                        </span>
+                        <span>内在价值 {formatCurrency(intrinsicPrice)} | 现价 {formatCurrency(currentPrice)}</span>
+                        <span>持仓成本 {formatCurrency(buyPrice)} | 浮盈/浮亏 {profit >= 0 ? '+' : ''}{formatCurrency(profit)}</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={asset.id} className={styles.assetRow}>
+                      <div>
+                        {getAssetIcon(asset.type)} {asset.name}
+                        {asset.metadata?.sector && <span className={styles.sectorTag}>{asset.metadata.sector}</span>}
+                      </div>
+                      <div className={styles.assetMeta}>
+                        <span>基础市值 {formatCurrency(asset.marketValue)}</span>
+                        <span>
+                          当前市值{' '}
+                          {formatCurrency(
+                            getAssetMarketValue(asset, state.marketMultiplier[asset.type], state.sectorMultiplier)
+                          )}
+                        </span>
+                        <span>月现金流 +{formatCurrency(asset.cashFlow)}</span>
+                      </div>
+                      {peInfo}
+                      {canLiquidate && monthlyCashFlow < 0 && (
+                        <div className={styles.liquidateActions}>
+                          <button
+                            type="button"
+                            className={`${styles.liquidateBtn} cartoon-button`}
+                            onClick={() => actions.liquidateAsset(asset.id, false)}
+                          >
+                            协商变卖 {formatCurrency(consent!.proceeds)}
+                          </button>
+                          <button
+                            type="button"
+                            className={`${styles.liquidateBtnSecret} cartoon-button`}
+                            onClick={() => actions.liquidateAsset(asset.id, true)}
+                          >
+                            私自变卖 {formatCurrency(secret!.proceeds)}
+                          </button>
+                        </div>
                       )}
-                    </span>
-                    <span>月现金流 +{formatCurrency(asset.cashFlow)}</span>
-                  </div>
-                </div>
-              ))
+                    </div>
+                  );
+                })}
+              </>
             )}
           </section>
 
@@ -268,6 +358,10 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
             nested
             onClose={() => setRepayTarget(null)}
           />
+        )}
+
+        {showStockTrade && (
+          <StockTradeModal onClose={() => setShowStockTrade(false)} />
         )}
       </div>
     </div>

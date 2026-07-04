@@ -1,8 +1,9 @@
 import type { BugLogEntry, GameAction, GameState } from '../types/game';
-import { checkBankruptcy, getMonthlyCashFlow } from './financial';
+import { checkBankruptcy, getMonthlyCashFlow, needsLiquidation, calcHighDebtHappinessPenalty } from './financial';
 import { generateId } from './random';
 
 const CHILDREN_LIMIT = 3;
+const DOODAD_CHILD_EXPENSE_IDS = new Set(['family_school_choice']);
 
 function appendBug(
   state: GameState,
@@ -83,22 +84,6 @@ function validateBranchCoverage(state: GameState, prevState: GameState, action: 
       category: 'branch_missing',
       severity: 'critical',
       message: '税务结算格未进入 CARD_DECISION 弹窗',
-      action: action.type,
-      snapshot: { phase: state.phase },
-    });
-  }
-
-  if (
-    action.type === 'MOVE_PLAYER' &&
-    space.type === 'payday' &&
-    state.phase !== 'CARD_DECISION' &&
-    state.phase !== 'TURN_END' &&
-    state.phase !== 'GAME_OVER'
-  ) {
-    next = appendBug(next, {
-      category: 'branch_missing',
-      severity: 'critical',
-      message: '发工资日格未正确进入弹窗或结束回合',
       action: action.type,
       snapshot: { phase: state.phase },
     });
@@ -234,10 +219,11 @@ export function runTestValidators(
       !next.promotionOffer &&
       !next.careerEvent &&
       next.pendingLifeEvent !== 'retirement' &&
-      next.pendingPaydayAmount == null &&
       !next.pendingSettlement &&
+      !next.pendingLiquidation &&
+      !next.pendingCashFlowSettlement &&
       space &&
-      !['baby', 'marriage', 'charity', 'promotion', 'payday', 'settlement'].includes(space.type);
+      !['baby', 'marriage', 'charity', 'promotion', 'settlement'].includes(space.type);
 
     if (cardStuck || (needsCard && !next.currentCard)) {
       const count = (next.testTimeoutRecord?.[cardStuckKey] ?? 0) + 1;
@@ -272,13 +258,93 @@ export function runTestValidators(
     next = appendBug(next, {
       category: 'bankruptcy',
       severity: 'critical',
-      message: `月现金流为负（${cf}）但未触发破产流程`,
+      message: `应触发破产（${cf}）但未进入 GAME_OVER`,
+      action: action.type,
+    });
+  }
+
+  if (
+    player &&
+    needsLiquidation(player, next.cashFlowMultiplier, next.sectorMultiplier) &&
+    !next.pendingLiquidation &&
+    next.phase !== 'GAME_OVER' &&
+    !player.isBankrupt
+  ) {
+    next = appendBug(next, {
+      category: 'bankruptcy',
+      severity: 'critical',
+      message: '现金耗尽且有可变卖资产，但未弹出强制变卖',
       action: action.type,
     });
   }
 
   next = validateFinancialSanity(next, prevState, action);
   next = validateBranchCoverage(next, prevState, action);
+
+  // 【新增】v3.7 子卡牌校验
+  if (action.type === 'PAY_DOODAD' && prevState.currentCard?.type === 'doodad') {
+    const doodadCard = prevState.currentCard;
+    const player = next.players[next.currentPlayerIndex];
+
+    // 子女费用对无子女玩家触发
+    if (doodadCard.id && DOODAD_CHILD_EXPENSE_IDS.has(doodadCard.id) && player.children === 0) {
+      next = appendBug(next, {
+        category: 'branch_missing',
+        severity: 'critical',
+        message: '子女费用doodad卡在无子女玩家上触发',
+        action: action.type,
+      });
+    }
+
+    // 配偶失业卡对单身触发
+    if (doodadCard.id === 'family_spouse_unemployed' && player.marriageStatus !== 'married') {
+      next = appendBug(next, {
+        category: 'branch_missing',
+        severity: 'critical',
+        message: '配偶失业卡在未婚玩家上触发',
+        action: action.type,
+      });
+    }
+  }
+
+  // 【新增】v3.7 晋升事件对失业/退休玩家
+  if (action.type === 'CHOOSE_PROMOTION' && prevState.careerEvent) {
+    const player = next.players[next.currentPlayerIndex];
+    const eventType = prevState.careerEvent.type;
+    if (eventType !== 'reemployment' && eventType !== 'layoff') {
+      if (player.isRetired) {
+        next = appendBug(next, {
+          category: 'branch_missing',
+          severity: 'critical',
+          message: '晋升事件在退休玩家上触发',
+          action: action.type,
+        });
+      }
+      if (player.isUnemployed) {
+        next = appendBug(next, {
+          category: 'branch_missing',
+          severity: 'critical',
+          message: '晋升事件在失业玩家上触发（失业应只触发再就业）',
+          action: action.type,
+        });
+      }
+    }
+  }
+
+  // 【新增】v3.7 高负债幸福惩罚缺失
+  if (player) {
+    const highDebtPenalty = calcHighDebtHappinessPenalty(player);
+    if (highDebtPenalty > 0 && player.marriageStatus === 'married' && next.phase !== 'GAME_OVER') {
+      if (!player.highDebtHappinessPenalty || player.highDebtHappinessPenalty <= 0) {
+        next = appendBug(next, {
+          category: 'branch_missing',
+          severity: 'warning',
+          message: '高负债幸福惩罚缺失（总负债>3x年收入应扣幸福度）',
+          action: action.type,
+        });
+      }
+    }
+  }
 
   if (next.testMaxRounds && next.round > next.testMaxRounds && next.phase !== 'GAME_OVER') {
     next = appendBug(next, {

@@ -79,10 +79,6 @@ export function useGameActions() {
     dispatch({ type: 'CONFIRM_RETIREMENT' });
   }, [dispatch]);
 
-  const confirmPayday = useCallback(() => {
-    dispatch({ type: 'CONFIRM_PAYDAY' });
-  }, [dispatch]);
-
   const confirmSettlement = useCallback(() => {
     dispatch({ type: 'CONFIRM_SETTLEMENT' });
   }, [dispatch]);
@@ -136,6 +132,18 @@ export function useGameActions() {
     dispatch({ type: 'DECLARE_BANKRUPTCY' });
   }, [dispatch]);
 
+  const liquidateAsset = useCallback((assetId: string, isSecretSell: boolean) => {
+    dispatch({ type: 'LIQUIDATE_ASSET', payload: { assetId, isSecretSell } });
+  }, [dispatch]);
+
+  const confirmCashFlowSettlement = useCallback(() => {
+    dispatch({ type: 'CONFIRM_CASH_FLOW_SETTLEMENT' });
+  }, [dispatch]);
+
+  const sellStockManually = useCallback((assetId: string, sellHand: number) => {
+    dispatch({ type: 'MANUAL_SELL_STOCK', payload: { assetId, sellHand } });
+  }, [dispatch]);
+
   return {
     setupGame,
     restartGame,
@@ -152,7 +160,6 @@ export function useGameActions() {
     chooseMarriage,
     choosePregnancyPath,
     confirmRetirement,
-    confirmPayday,
     confirmSettlement,
     choosePromotion,
     resolveMarriageGrid,
@@ -164,6 +171,9 @@ export function useGameActions() {
     repayLiability,
     sellAsset,
     declareBankruptcy,
+    liquidateAsset,
+    confirmCashFlowSettlement,
+    sellStockManually,
   };
 }
 

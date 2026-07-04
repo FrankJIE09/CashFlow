@@ -5,6 +5,8 @@ import { getCityById, CITY_TIER_LABELS } from '../../data/cities';
 import { getPlayerProfessionName } from '../../data/professions';
 import { PROFESSIONS } from '../../data/professions';
 import {
+  calcEmergencyReserveMonths,
+  calcUnemploymentHappinessPenalty,
   getMonthlyCashFlow,
   getNetWorth,
   getPassiveIncome,
@@ -16,7 +18,7 @@ import {
   calcMarriageHappinessBySalary,
 } from '../../utils/financial';
 import { canPlayerRepay } from '../../utils/repayEligibility';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPlayerAge } from '../../utils/format';
 import { FinancialStatement } from '../FinancialStatement/FinancialStatement';
 import { ProgressBar } from '../ProgressBar/ProgressBar';
 import { PROFESSION_AVATARS, STATUS_ICONS } from '../Icons/GameIcons';
@@ -70,9 +72,38 @@ export function PlayerPanel() {
     selectedPlayer.marriageStatus === 'married'
       ? calcMarriageHappinessBySalary(selectedPlayer.salary)
       : 0;
+  const emergencyReserve = calcEmergencyReserveMonths(
+    selectedPlayer,
+    state.cashFlowMultiplier,
+    state.sectorMultiplier
+  );
+  const unemploymentPenalty =
+    selectedPlayer.isUnemployed || (selectedPlayer.partnerUnemployedTurnsRemaining ?? 0) > 0
+      ? calcUnemploymentHappinessPenalty(
+          selectedPlayer,
+          state.cashFlowMultiplier,
+          state.sectorMultiplier
+        )
+      : 0;
 
   return (
     <div className={`${styles.panel} cartoon-card`}>
+      {(selectedPlayer.isUnemployed || (selectedPlayer.partnerUnemployedTurnsRemaining ?? 0) > 0) && (
+        <div className={styles.unemploymentBanner}>
+          {selectedPlayer.isUnemployed && (
+            <span>
+              🔴 失业第 {selectedPlayer.consecutiveUnemployedTurns ?? 0} 月
+              （剩余 {selectedPlayer.unemploymentTurnsRemaining ?? 0} 回合）
+            </span>
+          )}
+          {(selectedPlayer.partnerUnemployedTurnsRemaining ?? 0) > 0 && (
+            <span> · 配偶失业（剩余 {selectedPlayer.partnerUnemployedTurnsRemaining} 回合）</span>
+          )}
+          {unemploymentPenalty > 0 && (
+            <span> · 本月幸福度 -{unemploymentPenalty}</span>
+          )}
+        </div>
+      )}
       <div className={styles.header}>
         <h3 className={styles.title}>👤 角色面板</h3>
         <div className={styles.playerTabs}>
@@ -140,7 +171,7 @@ export function PlayerPanel() {
               )}
             </div>
             <div className={styles.ageLine}>
-              🎂 {selectedPlayer.age} 岁
+              🎂 {formatPlayerAge(selectedPlayer)}
               {yearsToRetire != null && !selectedPlayer.isRetired && (
                 <span> · 距退休 {yearsToRetire} 年</span>
               )}
@@ -220,6 +251,13 @@ export function PlayerPanel() {
             <span className={styles.statIcon}>🏦</span>
             <span className={styles.statLabel}>负债</span>
             <span className={styles.statValue}>{formatCurrency(debt)}</span>
+          </div>
+          <div className={styles.statItem}>
+            <span className={styles.statIcon}>🛡️</span>
+            <span className={styles.statLabel}>应急储备</span>
+            <span className={styles.statValue}>
+              {emergencyReserve >= 99 ? '∞' : `${emergencyReserve.toFixed(1)}月`}
+            </span>
           </div>
         </div>
 

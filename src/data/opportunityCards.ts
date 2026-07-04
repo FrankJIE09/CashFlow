@@ -1,4 +1,23 @@
 import type { OpportunityCard } from '../types/game';
+import { SECTOR_BASE_PE, getStockIntrinsicValue } from '../utils/financial';
+
+/**
+ * 【新增】v3.6 随机生成初始 currentPe
+ * 30% 深度低估 (0.6×basePe), 40% 合理, 30% 严重高估 (1.5×basePe)
+ */
+function randomCurrentPe(basePe: number): number {
+  const roll = Math.random();
+  if (roll < 0.3) {
+    // deep undervalue
+    return Math.round(basePe * (0.4 + Math.random() * 0.2) * 10) / 10;
+  } else if (roll < 0.7) {
+    // fair
+    return Math.round(basePe * (0.8 + Math.random() * 0.4) * 10) / 10;
+  } else {
+    // severe overvalue
+    return Math.round(basePe * (1.5 + Math.random() * 0.5) * 10) / 10;
+  }
+}
 
 function stock(
   id: string,
@@ -18,6 +37,9 @@ function stock(
   const yearDivPerShare = price * dividendYield;
   const marketValue = shareHand * 100 * price;
   const monthlyDividend = Math.round((shareHand * 100 * yearDivPerShare) / 12);
+  const basePe = SECTOR_BASE_PE[sector] ?? 15;
+  const currentPe = randomCurrentPe(basePe);
+  const intrinsicPrice = getStockIntrinsicValue(yearDivPerShare, basePe);
   return {
     id,
     title: `${name} (${ticker})`,
@@ -37,6 +59,11 @@ function stock(
       shareHand,
       singlePrice: price,
       yearDivPerShare,
+      basePe,
+      currentPe,
+      intrinsicPrice,
+      originalSinglePrice: price,
+      buyPe: currentPe,
       metadata: {
         sector,
         ticker,

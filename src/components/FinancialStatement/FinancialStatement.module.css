@@ -318,6 +318,39 @@
   gap: 10px;
 }
 
+.liquidateHint {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: #ffe8e8;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #c0392b;
+}
+
+.liquidateActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.liquidateBtn {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: #ffeaa7;
+}
+
+.liquidateBtnSecret {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: #fab1a0;
+}
+
 .cancelButton,
 .confirmButton {
   flex: 1;
@@ -337,4 +370,64 @@
 
 .confirmButton:disabled {
   opacity: 0.5;
+}
+
+/* 【新增】v3.6 PE 估值信息 */
+.peInfo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 6px 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-light);
+}
+
+.valuationTag {
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.deepUndervalue {
+  background: #d5f5e3;
+  color: #1e8449;
+}
+
+.fair {
+  background: #fdebd0;
+  color: #b9770e;
+}
+
+.overvalue {
+  background: #fadbd8;
+  color: #c0392b;
+}
+
+.severeOvervalue {
+  background: #e74c3c;
+  color: #fff;
+}
+
+/* 【新增】v3.6 证券交易按钮 */
+.stockTradeBtn {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: linear-gradient(145deg, #3498db, #2980b9);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  border-radius: 12px;
+  box-shadow: 0 3px 0 #1f618d;
+}
+
+.stockTradeBtn:hover {
+  background: #2980b9;
+}
+
+.stockTradeBtn:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #1f618d;
 }

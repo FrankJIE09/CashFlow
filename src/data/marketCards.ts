@@ -409,4 +409,163 @@ export const MARKET_CARDS: MarketCard[] = [
     type: 'market',
     effect: { type: 'reemployment', eventCategory: 'economicCycle' },
   },
+
+  // ── 【新增】v3.6 个股 PE 事件 ──
+  {
+    id: 'stock_earnings_beat',
+    title: '个股业绩大增',
+    description: '你持仓的一只股票发布超预期财报，当前动态 PE 大幅提升。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'industryTrend',
+      stockPeDelta: 0.4,
+    },
+  },
+  {
+    id: 'stock_financial_fraud',
+    title: '财务暴雷',
+    description: '你持仓的一只股票深陷财务造假丑闻，当前 PE 腰斩，全年股息归零。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'policyRegulation',
+      stockPeDelta: -0.5,
+      assetImpacts: {
+        stock: { cashFlowChange: 0 },
+      },
+    },
+  },
+  {
+    id: 'sector_upswing',
+    title: '行业景气上行',
+    description: '你持仓股票所属行业迎来景气周期，行业中枢 PE 提升。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'industryTrend',
+      sectorBasePeDelta: 0.2,
+    },
+  },
+  {
+    id: 'sector_decline',
+    title: '行业衰退',
+    description: '你持仓股票所属行业陷入衰退周期，行业中枢 PE 下调。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'economicCycle',
+      sectorBasePeDelta: -0.3,
+    },
+  },
+  {
+    id: 'buyout_premium',
+    title: '场外收购要约',
+    description: '有买家向你持有的某只股票发出溢价收购要约，可按 130% 市价卖出。',
+    type: 'market',
+    effect: {
+      type: 'buyout',
+      targetAssetType: 'stock',
+      multiplier: 1.3,
+      buyoutPremium: 0.3,
+    },
+  },
+  {
+    id: 'dividend_adjust',
+    title: '分红调整',
+    description: '市场风格切换，高股息与成长股估值微调，持仓股票动态 PE 小幅波动。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'industryTrend',
+      stockPeDelta: 0.05,
+    },
+  },
+
+  // ── 【新增】v3.7 PE 均值回归市场卡 ──
+  {
+    id: 'pe_mean_reversion_high',
+    title: '高PE均值回归',
+    description: '市场估值过高引发获利回吐，所有股票当前动态PE回落30%，高估值品种承压最大。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'economicCycle',
+      stockPeDelta: -0.3,
+    },
+  },
+  {
+    id: 'pe_mean_reversion_low',
+    title: '低PE均值修复',
+    description: '市场情绪回暖价值发现，所有股票当前动态PE修复反弹40%，低估品种率先受益。',
+    type: 'market',
+    effect: {
+      type: 'stockPeEvent',
+      eventCategory: 'economicCycle',
+      stockPeDelta: 0.4,
+    },
+  },
+
+  // ── 【新增】v3.7 通胀/通缩对冲市场卡 ──
+  {
+    id: 'inflation_spike',
+    title: '通胀飙升',
+    description: 'CPI超预期大涨，现金购买力下降5%，房地产/商品/高股息股票受益，债券承压。',
+    type: 'market',
+    effect: {
+      type: 'inflationEvent',
+      eventCategory: 'economicCycle',
+      inflationDelta: 0.05,
+      assetImpacts: {
+        realEstate: { priceChange: 1.08 },
+        commodity: { priceChange: 1.15 },
+        stock: { cashFlowChange: 1.05 },
+        bond: { priceChange: 0.92 },
+      },
+    },
+  },
+  {
+    id: 'deflation_spiral',
+    title: '通缩螺旋',
+    description: '需求萎缩物价下跌，现金购买力上升5%，债券受益，股票/房产等风险资产承压。',
+    type: 'market',
+    effect: {
+      type: 'inflationEvent',
+      eventCategory: 'economicCycle',
+      inflationDelta: -0.05,
+      assetImpacts: {
+        bond: { priceChange: 1.08 },
+        stock: { priceChange: 0.92 },
+        realEstate: { priceChange: 0.88 },
+        commodity: { priceChange: 0.85 },
+      },
+    },
+  },
+  {
+    id: 'inflation_mild',
+    title: '温和通胀',
+    description: '温和通胀环境利好实体经济和楼市，现金小幅贬值2%，消费板块受益。',
+    type: 'market',
+    effect: {
+      type: 'inflationEvent',
+      eventCategory: 'economicCycle',
+      inflationDelta: 0.02,
+      assetImpacts: {
+        realEstate: { priceChange: 1.05 },
+        entity: { priceChange: 1.03, cashFlowChange: 1.05 },
+        消费: { priceChange: 1.08 },
+        bond: { priceChange: 0.97 },
+      },
+    },
+  },
+  // 【新增】v3.8 育儿补贴上调市场卡
+  {
+    id: 'market_child_subsidy_up',
+    title: '育儿补贴上调',
+    description: '国家发布新育儿补贴政策，0-3岁儿童补贴翻倍，持续10回合。',
+    type: 'market',
+    effect: {
+      type: 'childSubsidyUp',
+    },
+  },
 ];

@@ -71,7 +71,7 @@ export function getMacroCoeff(state: GameState): number {
   return 1.0;
 }
 
-/** finalLayoffProb = baseCareerRisk × ageCoeff × marriageHappinessCoeff × macroCoeff × layoffRiskModifier */
+/** finalLayoffProb = baseCareerRisk × ageCoeff × marriageHappinessCoeff × macroCoeff × layoffRiskModifier × childPenalty */
 export function calcFinalLayoffProb(player: Player, state: GameState): number {
   const base = getBaseCareerRisk(player.professionId);
   const age = getAgeCoeff(player.age, player.retireStandardAge);
@@ -81,7 +81,9 @@ export function calcFinalLayoffProb(player: Player, state: GameState): number {
       : 1.0;
   const macro = getMacroCoeff(state);
   const modifier = player.layoffRiskModifier ?? 1;
-  return Math.min(1, base * age * marriage * macro * modifier);
+  // 【v3.8】女性有0-3岁子嗣时失业概率 ×1.2
+  const childMult = (player.gender === 'female' && player.childAges.length > 0) ? 1.2 : 1;
+  return Math.min(1, base * age * marriage * macro * modifier * childMult);
 }
 
 function getPromotionWeight(professionId: string): number {
@@ -91,6 +93,14 @@ function getPromotionWeight(professionId: string): number {
   if (track === 'realEstate') return 0.25;
   if (track === 'whiteCollar') return 0.3;
   return 0.28;
+}
+
+/** 【v3.8】晋升概率女性有0-3岁子嗣时 ×0.75 */
+export function applyChildPromotionPenalty(prob: number, player: Player): number {
+  if (player.gender === 'female' && player.childAges.length > 0) {
+    return prob * 0.75;
+  }
+  return prob;
 }
 
 function getJobHopWeight(professionId: string): number {
@@ -145,12 +155,14 @@ export function createReemploymentEvent(player: Player): CareerEvent {
 function createPromotionEvent(player: Player): CareerEvent {
   const boostPct = 0.15 + Math.random() * 0.15;
   const costMonths = 1 + Math.floor(Math.random() * 2);
-  const cost = Math.round(player.salary * costMonths);
+  // 【新增】v3.7 30-45岁晋升培训费减免
+  const ageBonus = player.age >= 30 && player.age <= 45 ? 0.8 : 1.0;
+  const cost = Math.round(player.salary * costMonths * ageBonus);
   const monthlyHappinessBoost = 2 + Math.floor(Math.random() * 3);
   return {
     type: 'promotion',
     title: '内部晋升通知',
-    description: `公司决定晋升你！月薪 +${Math.round(boostPct * 100)}%，需投入 ${costMonths} 个月薪资的培训/社交费用，永久降低 20% 裁员概率，已婚幸福度每月 +${monthlyHappinessBoost}。`,
+    description: `公司决定晋升你！月薪 +${Math.round(boostPct * 100)}%，需投入 ${costMonths} 个月薪资的培训/社交费用${ageBonus < 1 ? '（30-45岁享减免）' : ''}，永久降低 20% 裁员概率，已婚幸福度每月 +${monthlyHappinessBoost}。`,
     salaryBoostPct: boostPct,
     cost,
     monthlyHappinessBoost,
@@ -160,12 +172,13 @@ function createPromotionEvent(player: Player): CareerEvent {
 function createJobHopEvent(_player: Player): CareerEvent {
   const highPayBoost = 0.35 + Math.random() * 0.15;
   const stableCut = 0.1 + Math.random() * 0.1;
+  // 【新增】v3.7 30-45岁跳槽薪资额外+10%
+  const ageBonus = _player.age >= 30 && _player.age <= 45 ? 0.1 : 0;
   return {
     type: 'jobHop',
     title: '猎头 Offer',
-    description: '猎头带来两个选择：高薪跳槽（涨薪但有空窗期与短期裁员风险），或稳定体制内岗位（降薪但几乎不会被裁）。',
-    highPayBoostPct: highPayBoost,
-    highPayGapTurns: 2,
+    description: `【修正】猎头带来两个选择：高薪跳槽（涨薪 +${Math.round((highPayBoost + ageBonus) * 100)}%${ageBonus > 0 ? '，含30-45岁经验加成' : ''}，无缝入职，试用期 3 回合裁员风险略升），或稳定岗位（降薪 ${Math.round(stableCut * 100)}%，无缝入职，极低裁员风险）。`,
+    highPayBoostPct: highPayBoost + ageBonus,
     highPayLayoffRiskTurns: 3,
     stableSalaryCutPct: stableCut,
   };
@@ -200,16 +213,37 @@ function createCareerChangeEvent(player: Player): CareerEvent {
   };
 }
 
+function createBusinessPromotionEvent(player: Player): CareerEvent {
+  const boostPct = 0.1 + Math.random() * 0.2;
+  const cost = Math.round(player.salary * (0.5 + Math.random() * 0.5));
+  return {
+    type: 'promotion',
+    title: '门店扩张机遇',
+    description: `自营生意迎来扩张窗口：投入约 ${cost.toLocaleString()} 元升级门店/进货，预计月经营收入 +${Math.round(boostPct * 100)}%。`,
+    salaryBoostPct: boostPct,
+    cost,
+    monthlyHappinessBoost: 2,
+  };
+}
+
 export function rollCareerEvent(player: Player, state: GameState): CareerEvent | null {
-  if (player.isRetired || isSelfEmployed(player.professionId)) return null;
+  // 【新增】v3.7 退休全局屏蔽
+  if (player.isRetired) return null;
+
+  if (isSelfEmployed(player.professionId)) {
+    if (player.isUnemployed) return null;
+    return createBusinessPromotionEvent(player);
+  }
 
   if (player.isUnemployed) {
     return createReemploymentEvent(player);
   }
 
   const promotionCount = player.promotionCount ?? player.promotionLevel ?? 0;
+  const promoBase = getPromotionWeight(player.professionId);
+  const promoWeight = applyChildPromotionPenalty(promoBase, player);
   const weights: Record<CareerEventType, number> = {
-    promotion: promotionCount >= 3 ? 0 : getPromotionWeight(player.professionId),
+    promotion: promotionCount >= 3 ? 0 : promoWeight,
     jobHop: getJobHopWeight(player.professionId),
     layoff: getLayoffEventWeight(player.professionId, player, state),
     careerChange: 0.1,
@@ -236,8 +270,9 @@ function isSelfEmployed(professionId: string): boolean {
 }
 
 export function canReceiveCareerEvent(player: Player): boolean {
+  // 【新增】v3.7 退休全局屏蔽所有职场事件
   if (player.isRetired) return false;
-  if (isSelfEmployed(player.professionId)) return false;
+  if (isSelfEmployed(player.professionId)) return !player.isUnemployed;
   if (player.isUnemployed) return true;
-  return !player.isRetired;
+  return true;
 }

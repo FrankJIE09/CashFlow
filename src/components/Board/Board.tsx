@@ -7,7 +7,6 @@ import styles from './Board.module.css';
 
 const GRID_SIZE = 7;
 const SPACE_BG_COLORS: Record<Space['type'], string> = {
-  payday: '#C8F6D8',
   opportunity: '#D4F0FF',
   market: '#FFF4C2',
   doodad: '#FFD4D4',
@@ -19,7 +18,6 @@ const SPACE_BG_COLORS: Record<Space['type'], string> = {
 };
 
 const SPACE_BORDER_COLORS: Record<Space['type'], string> = {
-  payday: '#77DD77',
   opportunity: '#8FD3FF',
   market: '#FFE66D',
   doodad: '#FF9AA2',
