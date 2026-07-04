@@ -127,7 +127,12 @@ export function PlayerPanel() {
             {PROFESSION_AVATARS[selectedPlayer.professionId] || '👤'}
           </div>
           <div className={styles.characterInfo}>
-            <div className={styles.characterName}>{selectedPlayer.name}</div>
+            <div className={styles.characterName}>
+              {selectedPlayer.name}
+              <span className={styles.genderTag}>
+                {selectedPlayer.gender === 'female' ? '♀' : '♂'}
+              </span>
+            </div>
             <div className={styles.profession}>{professionName}</div>
             <div className={styles.cityLine}>
               📍 {city.name} · {CITY_TIER_LABELS[city.tier]} · 生活×{expenseMult.toFixed(2)}
@@ -143,7 +148,15 @@ export function PlayerPanel() {
                 <span className={`${styles.badge} ${styles.charity}`}>{STATUS_ICONS.charity} 双骰子×{selectedPlayer.charityTurns}</span>
               )}
               {selectedPlayer.children > 0 && (
-                <span className={`${styles.badge} ${styles.baby}`}>{STATUS_ICONS.child} ×{selectedPlayer.children}</span>
+                <span className={`${styles.badge} ${styles.baby}`}>
+                  {STATUS_ICONS.child} ×{selectedPlayer.children}
+                  {selectedPlayer.childAges.length > 0 && <span>（0-3: {selectedPlayer.childAges.length}）</span>}
+                </span>
+              )}
+              {selectedPlayer.maternityLeaveRemaining > 0 && (
+                <span className={`${styles.badge} ${styles.maternity}`}>
+                  🤱 产假 {selectedPlayer.maternityLeaveRemaining}月
+                </span>
               )}
               {selectedPlayer.marriageStatus === 'married' && (
                 <span className={`${styles.badge} ${styles.married}`}>
