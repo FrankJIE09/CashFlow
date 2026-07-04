@@ -1639,6 +1639,15 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         return { ...skipState, phase: 'TURN_END', currentCard: null };
       }
 
+      // 【新增】v3.7 家庭身份校验
+      const isChildExpense = ['family_school_choice', 'doodad_tutor', 'doodad_study_abroad'].includes(card.id ?? '');
+      if (isChildExpense && (player.children === 0 || (player.dinkTurns ?? 0) > 0)) {
+        return { ...addLog(state, player.id, `${player.name} 无子女或为丁克，跳过子女费用`, 'system'), phase: 'TURN_END', currentCard: null };
+      }
+      if (card.id === 'family_spouse_unemployed' && player.marriageStatus !== 'married') {
+        return { ...addLog(state, player.id, `${player.name} 未婚，跳过配偶失业事件`, 'system'), phase: 'TURN_END', currentCard: null };
+      }
+
       const cost = card.cost;
       let newState = state;
 
