@@ -287,7 +287,7 @@ export function runTestValidators(
     const player = next.players[next.currentPlayerIndex];
 
     // 子女费用对无子女玩家触发
-    if (doodadCard.id && DOODAD_CHILD_EXPENSE_IDS.has(doodadCard.id) && player.children === 0) {
+    if (doodadCard.id && DOODAD_CHILD_EXPENSE_IDS.has(doodadCard.id) && player.children === 0 && next.phase === 'CARD_DECISION') {
       next = appendBug(next, {
         category: 'branch_missing',
         severity: 'critical',
@@ -297,7 +297,7 @@ export function runTestValidators(
     }
 
     // 配偶失业卡对单身触发
-    if (doodadCard.id === 'family_spouse_unemployed' && player.marriageStatus !== 'married') {
+    if (doodadCard.id === 'family_spouse_unemployed' && player.marriageStatus !== 'married' && next.phase === 'CARD_DECISION') {
       next = appendBug(next, {
         category: 'branch_missing',
         severity: 'critical',
