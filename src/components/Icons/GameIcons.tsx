@@ -7,7 +7,9 @@ export const SPACE_ICONS: Record<string, string> = {
   doodad: '🛍️',
   charity: '💝',
   baby: '👶',
+  marriage: '💍',
   settlement: '🏛️',
+  promotion: '🎖️',
 };
 
 export const ASSET_ICONS: Record<AssetType, string> = {
@@ -33,6 +35,10 @@ export const STATUS_ICONS: Record<string, string> = {
   coin: '🪙',
   loan: '⛓️',
   child: '👣',
+  married: '💑',
+  divorced: '💔',
+  unemployed: '📭',
+  pregnant: '🤰',
 };
 
 export const PROFESSION_AVATARS: Record<string, string> = {

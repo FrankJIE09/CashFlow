@@ -5,6 +5,7 @@ import { useGameActions } from '../../hooks/useGameActions';
 import { useSound } from '../../hooks/useSound';
 import { AnimatedDice } from '../AnimatedDice/AnimatedDice';
 import { getCurrentDebt, getMonthlyCashFlow } from '../../utils/financial';
+import { isSelfEmployedProfession } from '../../data/professions';
 import { canPlayerRepay } from '../../utils/repayEligibility';
 import { formatCurrency } from '../../utils/format';
 import { STATUS_ICONS } from '../Icons/GameIcons';
@@ -33,11 +34,16 @@ export function ActionBar() {
 
   if (!player) return null;
 
-  const isHumanTurn = !player.isAI && !player.isBankrupt;
+  const isHumanTurn = !player.isAI && !player.isBankrupt && !state.testMode;
   const canRoll = state.phase === 'ROLLING' || state.phase === 'FAST_TRACK';
   const canEndTurn = state.phase === 'TURN_END';
   const canRepay = canPlayerRepay(state, player);
   const cashFlow = getMonthlyCashFlow(player);
+  const canManualRetire =
+    isSelfEmployedProfession(player.professionId) &&
+    !player.isRetired &&
+    player.age >= 50 &&
+    isHumanTurn;
 
   const handleRoll = () => {
     if (!canRoll || !isHumanTurn) return;
@@ -93,6 +99,17 @@ export function ActionBar() {
         >
           ✅ 结束回合
         </button>
+
+        {canManualRetire && (
+          <button
+            className={`${styles.retireButton} cartoon-button`}
+            onClick={actions.manualRetire}
+            disabled={!canEndTurn}
+            title="自由职业者满50岁可主动退休"
+          >
+            🏖️ 主动退休
+          </button>
+        )}
 
         <div className={styles.loanSection}>
           <input

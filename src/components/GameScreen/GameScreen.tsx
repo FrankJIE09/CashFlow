@@ -6,11 +6,15 @@ import { CardModal } from '../CardModal/CardModal';
 import { WinScreen } from '../WinScreen/WinScreen';
 import { SoundEffects } from '../SoundEffects/SoundEffects';
 import { useAIPlayer } from '../../hooks/useAIPlayer';
+import { useAutoTestAgent } from '../../hooks/useAutoTestAgent';
+import { AutoTestPanel } from '../AutoTestPanel/AutoTestPanel';
+import { useGame } from '../../context/GameContext';
 import styles from './GameScreen.module.css';
 
 export function GameScreen() {
-  // Hook to drive AI turns
+  const { state } = useGame();
   useAIPlayer();
+  useAutoTestAgent();
 
   return (
     <div className={styles.screen}>
@@ -36,6 +40,7 @@ export function GameScreen() {
       <CardModal />
       <WinScreen />
       <SoundEffects />
+      {state.testMode && <AutoTestPanel />}
     </div>
   );
 }

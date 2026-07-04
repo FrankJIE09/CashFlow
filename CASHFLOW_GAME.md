@@ -3,7 +3,7 @@
 > 基于罗伯特·清崎《富爸爸穷爸爸》改编的桌面棋盘游戏。  
 > 本文档是 React + TypeScript + Vite 技术方案下的完整设计、数据结构与开发指南。
 
-**【调整】文档版本：v3.0 · 最后更新：2026-07-04**
+**【调整】文档版本：v3.3 · 最后更新：2026-07-04**（v3.1 及以前内容保持不变，v3.2/v3.3 仅追加【新增】标记段落）
 
 ---
 
@@ -24,6 +24,7 @@
 13. [游戏平衡与参数表](#十三游戏平衡与参数表)
 14. [扩展方向](#十四扩展方向)
 15. [附录：快速参考](#十五附录快速参考)
+16. [【新增】自动化测试 Agent 系统](#十六新增自动化测试-agent-系统)
 
 ---
 
@@ -43,6 +44,32 @@
 | 资产定价 | 房产/车辆按玩家城市 `scaleAssetByPlayerCity` 缩放 | 【调整】 |
 | 生育选择 | Baby 格子玩家主动选择，拒绝无惩罚 | 【调整】 |
 | 开局流程 | StartScreen 先选城市再选职业 | 【新增】 |
+
+**【新增】v3.1 扩展机制**（在 v3.0 基础上，仅追加）：
+
+| 模块 | v3.1 变更 | 标签 |
+|------|-----------|------|
+| 股票按手交易 | A股/港股/ETF 整手买卖、印花税、月股息 | 【新增】 |
+| 婚恋人生 | 婚恋格、幸福度、DINK/怀孕、离婚分割 | 【新增】 |
+| 失业系统 | 裁员市场卡、职业层级影响概率、再就业 | 【新增】 |
+
+**【新增】v3.2 人生阶段扩展**（在 v3.1 基础上，仅追加）：
+
+| 模块 | v3.2 变更 | 标签 |
+|------|-----------|------|
+| 年龄/退休 | 跑完一圈 +1 岁、职业差异化退休年龄、养老金 | 【新增】 |
+| 升迁系统 | 升迁格、薪资 +15~40%、培训费 | 【新增】 |
+
+**【新增】v3.3 自动化测试 Agent**（在 v3.2 基础上，仅追加）：
+
+| 模块 | v3.3 变更 | 标签 |
+|------|-----------|------|
+| 自动测试模式 | StartScreen 开关 + 回合上限，隔离于正常游玩 | 【新增】 |
+| Bug 检测器 | reducer 后置 `runTestValidators`，7 类规则 | 【新增】 |
+| AutoTestPanel | 实时 Bug 列表、导出报告、停止测试 | 【新增】 |
+| 年龄失业 | 年龄段失业概率乘数、风险等级 UI | 【新增】 |
+| 家庭事件 | 10 张家庭紧急 doodad 卡 | 【新增】 |
+| 婚恋扩展 | 薪资联动幸福度 monthly delta | 【新增】 |
 
 v2.0 已具备的能力（本文档仍保留说明）：7 类精细化债务、2026 年中国真实资产分类（7 大类 26 子类）、差异化宏观事件卡、房产税（2 套及以上）。
 
@@ -130,7 +157,14 @@ export type OpportunityKind = 'smallDeal' | 'bigDeal';
 
 export type SpaceType =
   | 'payday' | 'opportunity' | 'market' | 'doodad'
-  | 'charity' | 'baby' | 'settlement';
+  | 'charity' | 'baby' | 'marriage' | 'settlement'  // 【新增】v3.1 marriage
+  | 'promotion';  // 【新增】v3.2 升迁格
+
+/** 【新增】v3.1 婚恋状态 */
+export type MarriageStatus = 'single' | 'married' | 'divorced';
+
+/** 【新增】v3.1 生育路径 */
+export type PregnancyPath = 'plan' | 'dink' | 'postpone';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -174,6 +208,8 @@ export interface ExpenseBreakdown {
   other: number;
   perChild: number;
   taxHouse?: number;     // 多套房产持有税（动态计算）
+  medicalPregnancy?: number;  // 【新增】v3.1 孕期医疗月支出
+  medicalElderly?: number;    // 【新增】v3.2 退休后老年医疗月支出
 }
 
 export interface AssetMetadata {
@@ -207,6 +243,11 @@ export interface Asset {
   mortgage: number;
   marketValue: number;
   shares?: number;
+  shareHand?: number;        // 【新增】v3.1 手数（1手=100股）
+  singlePrice?: number;      // 【新增】v3.1 每股单价
+  yearDivPerShare?: number;  // 【新增】v3.1 每股年化股息
+  purchaseRound?: number;    // 【新增】v3.1 买入回合
+  heldMonths?: number;       // 【新增】v3.1 持有月数（≥12 卖免印花税）
   metadata?: AssetMetadata;
 }
 
@@ -234,6 +275,7 @@ export interface Player {
   position: number;
   cash: number;
   salary: number;
+  baseSalary?: number;           // 【新增】v3.1 失业前基准月薪
   expenses: ExpenseBreakdown;
   children: number;
   assets: Asset[];
@@ -246,6 +288,27 @@ export interface Player {
   isAI: boolean;
   difficulty?: Difficulty;
   isBankrupt: boolean;
+  // 【新增】v3.1 婚恋
+  marriageStatus: MarriageStatus;
+  marriageHappiness: number;
+  partnerSalary: number;
+  hasPregnancy: boolean;
+  pregnancyMonths?: number;
+  dinkTurns?: number;
+  // 【新增】v3.1 失业
+  isUnemployed?: boolean;
+  unemploymentTurnsRemaining?: number;
+  // 【新增】v3.2 年龄与退休
+  age: number;
+  baseStartAge: number;
+  retireStandardAge: number | null;  // null = 自由职业无强制退休
+  currentGameYear: number;
+  isRetired: boolean;
+  pensionIncome: number;
+  promotionLevel?: number;
+  partnerUnemployedTurnsRemaining?: number;
+  tempPerChildBoost?: number;
+  tempExpenseTurnsRemaining?: number;
 }
 
 export interface GameConfig {
@@ -268,7 +331,7 @@ export interface Profession {
   buff?: { salary?: number; expense?: number; savings?: number }; // 【新增】
 }
 
-/** 【调整】v3.0 GameAction — 含 CHOOSE_BABY */
+/** 【调整】v3.1 GameAction — 含 CHOOSE_BABY / 婚恋 / 股票手数 */
 export type GameAction =
   | { type: 'SETUP_GAME'; payload: GameConfig }
   | { type: 'RESTART_GAME' }
@@ -276,18 +339,23 @@ export type GameAction =
   | { type: 'MOVE_PLAYER' }
   | { type: 'RESOLVE_SPACE' }
   | { type: 'DRAW_CARD'; payload: { cardType: CardType } }
-  | { type: 'BUY_ASSET' }
-  | { type: 'BUY_DISCOUNTED_ASSET' }
+  | { type: 'BUY_ASSET'; payload?: { shareHand?: number } }           // 【新增】v3.1 股票手数
+  | { type: 'BUY_DISCOUNTED_ASSET'; payload?: { shareHand?: number } }
   | { type: 'DECLINE_CARD' }
   | { type: 'PAY_DOODAD' }
   | { type: 'DONATE_CHARITY'; payload: { donate: boolean } }
-  | { type: 'CHOOSE_BABY'; payload: { haveBaby: boolean } }   // 【新增】
+  | { type: 'CHOOSE_BABY'; payload: { haveBaby: boolean } }            // 【v3.0 新增】
+  | { type: 'CHOOSE_MARRIAGE'; payload: { marry: boolean } }          // 【新增】v3.1
+  | { type: 'CHOOSE_PREGNANCY_PATH'; payload: { path: PregnancyPath } } // 【新增】v3.1
+  | { type: 'CONFIRM_RETIREMENT' }                                     // 【新增】v3.2
+  | { type: 'CHOOSE_PROMOTION'; payload: { accept: boolean } }         // 【新增】v3.2
+  | { type: 'MANUAL_RETIRE' }                                          // 【新增】v3.2
   | { type: 'APPLY_MARKET_EFFECT' }
   | { type: 'DRAW_DISCOUNTED_OPPORTUNITY' }
   | { type: 'END_TURN' }
   | { type: 'TAKE_LOAN'; payload: { amount: number } }
   | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
-  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number } }
+  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
   | { type: 'DECLARE_BANKRUPTCY' };
 ```
 
@@ -570,14 +638,16 @@ export function getPropertyTax(player: Player): number {
 | 格子类型 | 数量 | 标识色 | 说明 |
 |----------|------|--------|------|
 | **Payday** 发工资 | 4 | 绿色 | 获得月工资；负债 `paidPeriods +1` |
-| **Opportunity** 机会 | 6 | 蓝色 | 抽取机会卡 |
+| **Opportunity** 机会 | 7 | 蓝色 | 抽取机会卡 |
 | **Market** 市场 | 4 | 黄色 | 抽取市场卡 |
-| **Doodad** 额外支出 | 4 | 红色 | 意外消费 |
+| **Doodad** 额外支出 | 3 | 红色 | 意外消费 |
 | **Charity** 慈善 | 1 | 紫色 | 可选捐款，获双骰子权利 |
 | **Baby** 生孩子 | 1 | 粉色 | **【调整】** 玩家选择是否生育 |
-| **Settlement** 结算 | 4 | 灰色 | 交税；持有 ≥2 套房产扣持有税 |
+| **Marriage** 婚恋 | 1 | 粉色 | 结婚或保持单身 |
+| **Promotion** 升迁 | 1 | 橙色 | 职场晋升机会 |
+| **Settlement** 结算 | 2 | 灰色 | 交税；持有 ≥2 套房产扣持有税（每圈 1 次月度 + 1 次年度） |
 
-合计：4 + 6 + 4 + 4 + 1 + 1 + 4 = **24 格**
+合计：4 + 7 + 4 + 3 + 1 + 1 + 1 + 1 + 2 = **24 格**
 
 ### 5.3 24 格平面顺序
 
@@ -589,21 +659,21 @@ export function getPropertyTax(player: Player): number {
 | 4 | Market | 市场波动 |
 | 5 | Payday | 发工资日 |
 | 6 | Opportunity | 大买卖机会 |
-| 7 | Doodad | 额外支出 |
+| 7 | Promotion | 升迁机会 |
 | 8 | Charity | 慈善捐款 |
 | 9 | Settlement | 税务结算 |
 | 10 | Opportunity | 小生意机会 |
-| 11 | Doodad | 额外支出 |
+| 11 | Marriage | 婚恋格 |
 | 12 | Payday | 发工资日 |
 | 13 | Market | 市场波动 |
 | 14 | Opportunity | 大买卖机会 |
 | 15 | Baby | 生育选择 |
-| 16 | Settlement | 税务结算 |
+| 16 | Doodad | 额外支出 |
 | 17 | Doodad | 额外支出 |
 | 18 | Market | 市场波动 |
 | 19 | Payday | 发工资日 |
 | 20 | Opportunity | 小生意机会 |
-| 21 | Settlement | 税务结算 |
+| 21 | Opportunity | 小生意机会 |
 | 22 | Market | 市场波动 |
 | 23 | Opportunity | 大买卖机会 |
 | 24 | Settlement | 年度结算 |
@@ -651,9 +721,13 @@ export const SPACES: Space[] = [
 
 每次 Payday 结算后，该玩家所有 `liabilities` 的 `paidPeriods += 1`。若月现金流为负，立即触发游戏失败判定。
 
+**【v3.3】** 落在发工资格时进入 `CARD_DECISION`，CardModal 展示月现金流金额，玩家点击「确认领取」后执行 `CONFIRM_PAYDAY` → `handlePayday` → `TURN_END`。跑圈经过起点（非发工资格）仍静默结算；退休当圈仍先发工资再弹退休窗。
+
 #### 5.6.2 Settlement（结算）
 
-玩家停留时缴纳当月税款；持有 ≥2 套房产时，按 **玩家城市** `propertyTaxRate` 计算持有税（`getPropertyTax`）。
+玩家停留时缴纳当月税款；持有 ≥2 套房产时，按 **玩家城市** `propertyTaxRate` 计算持有税（`getPropertyTax`）。每圈仅 **1 格税务结算**（月度）+ **1 格年度结算**（扣 12 个月持有税）。
+
+**【v3.3】** 落在结算格时进入 `CARD_DECISION`，CardModal 展示应缴持有税（或「无需缴纳」），确认后 `CONFIRM_SETTLEMENT` 扣款 → `TURN_END`。
 
 #### 5.6.3 【调整】Baby（生育选择）
 
@@ -686,6 +760,53 @@ case 'CHOOSE_BABY': {
 #### 5.6.4 Charity（慈善）
 
 捐款月收入的 10%，获得 3 回合双骰子权利。
+
+#### 5.6.5 【新增】v3.1 婚恋格（marriage）
+
+棋盘格 10 为「婚恋格」（`type: 'marriage'`）。仅 **单身（single）** 玩家可触发选择：
+
+1. 移动到婚恋格 → `CARD_DECISION`
+2. CardModal 展示「💍 婚恋格」
+3. 选择：
+   - **结婚** → `CHOOSE_MARRIAGE { marry: true }` → 一次性 `weddingCost(cityId)`，幸福度 60，伴侣月薪 `partnerSalary`，`other` + 月家庭开销
+   - **保持单身** → 无惩罚
+4. **已离婚（divorced）不可再婚**；已婚玩家经过时仅日志提示
+
+#### 5.6.6 【新增】v3.1 Baby 格（已婚生育三选一）
+
+在 v3.0 Baby 机制基础上扩展（**保留 v3.0 文档说明**）：
+
+- **未婚**玩家落在 Baby 格：自动跳过，日志提示「尚未结婚」
+- **已婚**玩家：CardModal 三选一 → `CHOOSE_PREGNANCY_PATH`
+  1. **计划怀孕（plan）** → `hasPregnancy=true`，月医疗支出，9 月后分娩或 5% 流产
+  2. **DINK（dink）** → 幸福度 -12/月，`dinkTurns` 累积，离婚风险上升
+  3. **推迟（postpone）** → 无变化
+
+#### 5.6.7 【新增】v3.2 升迁格（promotion）
+
+棋盘 **#6** 由 doodad 改为 `promotion` 升迁格：
+
+1. 落点检测：非退休、非失业、非自由职业
+2. 生成 `promotionOffer`（薪资 +15~40%，培训费 ≈ 月薪 5~15%）
+3. CardModal 展示接受/放弃 → `CHOOSE_PROMOTION`
+4. 接受：月薪与 `baseSalary` 上调，`promotionLevel++`，已婚幸福度 +薪资联动 bonus
+
+### 5.7 【新增】v3.1 婚恋人生系统
+
+| 机制 | 规则 |
+|------|------|
+| 幸福度 | 0–100，结婚初始 60；每月随机 ±5~8 波动 |
+| 工资加成 | 幸福度 ≥50：有效工资 ×1.10（含伴侣月薪） |
+| 离婚触发 | 幸福度 <40：15%/月；DINK ≥12 月：10%/月 |
+| 离婚后果 | 现金对半、强制折价 70% 出售半数房产/股票、律师费、失伴侣收入、不可再婚 |
+| 月度处理 | 每次发工资后 `processMonthlyLifeEvents` |
+
+```typescript
+// src/utils/financial.ts — 【新增】v3.1
+export function getEffectiveSalary(player: Player): number { /* 失业/婚恋加成 */ }
+export function weddingCost(cityId?: string): number { /* 婚礼一次性 */ }
+export function divorceSettlement(player: Player): DivorceSettlementResult { /* 分割 */ }
+```
 
 ---
 
@@ -854,6 +975,38 @@ export const DOODAD_CARDS: DoodadCard[] = [
 - 机会卡展示/购买前调用 `getOpportunityAsset(card, player)` 做城市缩放
 - 额外支出：现金不足自动贷款；支付后检查月现金流
 
+### 6.9 【新增】v3.1 失业生活事件卡
+
+市场卡组新增：
+
+| 卡片 ID | 标题 | effect.type | 说明 |
+|---------|------|-------------|------|
+| `life_unemployment` | 公司裁员/行业下行失业 | `unemployment` | 按职业 tier 概率失业 3–6 回合 |
+| `life_reemployment` | 再就业机遇 | `reemployment` | 失业中可提前恢复，薪资 85–100% |
+
+失业概率（`getUnemploymentProbability`）：basic 85% · service 65% · professional 40% · elite 20%
+
+失业期间：`isUnemployed=true`，月薪归零，支出继续，幸福度下降，离婚风险上升。倒计时结束后自动再就业（可能降薪）。
+
+### 6.10 【新增】v3.2 家庭紧急事件卡（doodad）
+
+`src/data/doodadCards.ts` 追加 10 张家庭类 doodad，通过 `PAY_DOODAD` 结算。扩展字段：`happinessDelta`、`partnerUnemploymentTurns`、`tempPerChildBoost`、`tempExpenseTurns`、`isFamilyEvent`。
+
+| 卡片 ID | 标题 | 一次性 |  recurring | 幸福度 | 特殊效果 |
+|---------|------|--------|------------|--------|----------|
+| `family_parent_illness` | 父母重病 | ¥50,000 | +¥2,000/月 | -15 | — |
+| `family_spouse_unemployed` | 配偶失业 | — | — | -20 | 伴侣月薪归零 2–5 回合 |
+| `family_elder_care` | 赡养支出 | ¥5,000 | +¥1,500/月 | -5 | — |
+| `family_house_repair` | 房屋大修 | ¥35,000 | — | -8 | — |
+| `family_ceremony` | 红白喜事 | ¥8,000 | — | -3 | — |
+| `family_chronic_illness` | 慢性疾病 | ¥3,000 | +¥800/月 | -10 | — |
+| `family_school_choice` | 子女择校 | ¥25,000 | — | -5 | 每孩临时 +¥500/月 ×6 回合 |
+| `family_pet_illness` | 宠物重病 | ¥12,000 | — | -6 | — |
+| `family_friend_loan` | 亲友借钱 | ¥15,000 | — | -4 | — |
+| `family_traffic_accident` | 交通事故 | ¥28,000 | — | -12 | — |
+
+现金不足时自动信用卡贷款；支付后 `checkBankruptcy` 判定不变。
+
 ---
 
 ## 七、财务系统
@@ -881,11 +1034,104 @@ export function getTotalExpenses(player: Player): number {
 }
 
 export function getMonthlyCashFlow(player: Player, cashFlowMultiplier?, sectorMultiplier?): number {
-  return player.salary + getPassiveIncome(player, cashFlowMultiplier, sectorMultiplier) - getTotalExpenses(player);
+  // 【新增】v3.1：失业时工资为 0，已婚用 getEffectiveSalary
+  const salary = player.isUnemployed ? 0 : getEffectiveSalary(player);
+  return salary + getPassiveIncome(...) - getTotalExpenses(player);
 }
 ```
 
 > **注意**：`expenses.mortgage / carLoan / creditCard / studentLoan` 在 v3.0 开局时置 0；职业初始负债月供仅通过 `liabilities[].monthlyPayment` 计入。`REPAY_LIABILITY` 对 `source === 'profession'` 的负债仍会同步减少对应 expenses 字段（兼容旧存档展示）。
+
+### 7.1.1 【新增】v3.1 股票按手交易（A股/港股/ETF）
+
+| 规则 | 说明 |
+|------|------|
+| 资产字段 | `shareHand`（手）、`singlePrice`（单价）、`yearDivPerShare`（每股年股息） |
+| 买入 | 仅整数手（1手=100股）；`BUY_ASSET { shareHand }` |
+| 卖出 | 不足1手可一次卖完；≥1手按整手卖；持有≥12月免 0.1% 印花税 |
+| 市值 | `shareHand × 100 × singlePrice × 市场乘数` |
+| 买入成本 | `stockLotBuyCost` = 本金 + 佣金 0.03% |
+| 月股息 | `shareHand × 100 × yearDivPerShare / 12` |
+
+```typescript
+// src/utils/financial.ts — 【新增】v3.1
+export const STOCK_LOT_SIZE = 100;
+export function isStockLotAsset(asset: Asset): boolean { /* ... */ }
+export function stockLotBuyCost(lots: number, singlePrice: number): number { /* ... */ }
+export function stockLotSellProceeds(asset, sellLots, priceMultiplier): number { /* 印花税 */ }
+export function getStockLotMonthlyDividend(asset: Asset): number { /* ... */ }
+```
+
+CardModal 对股票类机会卡展示 **整数手数输入** 与含佣金总支出。
+
+### 7.9 【新增】v3.2 年龄、升迁与退休系统
+
+#### 7.9.1 年龄与回合
+
+- 玩家每 **完整跑完棋盘一圈**（经过起点 space 0，`newPos < currentPos`）时：`age += 1`，`currentGameYear += 1`
+- 实现位置：`GameReducer` → `incrementAgeOnLap`（在 `MOVE_PLAYER` 中调用）
+
+#### 7.9.2 职业年龄/退休映射（`professions.ts` → `getProfessionAgeConfig`）
+
+| 职业类别 | 代表职业 | 起始年龄 | 退休年龄 |
+|----------|----------|----------|----------|
+| 蓝领 | 外卖员、保安、工厂工人、司机、收银员 | 22 | 55 |
+| 白领 | 秘书、会计、设计师、护士、销售 | 24 | 60 |
+| 科技 | 工程师 | 25 | 60 |
+| 高薪 | 医生、律师、飞行员 | 28 | 65 |
+| 公职 | 教师 | 25 | 65 |
+| 自由职业 | 自由职业者 | 30 | 无强制（`null`） |
+
+开局 `createPlayer` 写入 `age`、`baseStartAge`、`retireStandardAge`。
+
+#### 7.9.3 年龄关联失业
+
+```typescript
+// src/utils/financial.ts — 【新增】v3.2
+export function calcAgeUnemploymentRate(age, tier, professionId, retireStandardAge): number;
+export function getUnemploymentRiskLevel(...): '低' | '中' | '高';
+```
+
+| 年龄段 | 概率乘数 |
+|--------|----------|
+| &lt;30 | ×0.7 |
+| 30–39 | ×0.85 |
+| 40–49 | ×1.0 |
+| ≥50 | ×1.5 |
+| 距退休 ≤5 年 | ×2.0 |
+
+与 v3.1 `getUnemploymentProbability(tier)` 相乘后判定裁员市场卡。已退休玩家免疫失业。
+
+#### 7.9.4 升迁格（board space #6 `promotion`）
+
+- 落点触发 `promotionOffer`（薪资 +15~40%，一次性培训/社交费）
+- `CHOOSE_PROMOTION { accept }`：接受则 `salary`/`baseSalary` 上调、`promotionLevel++`、幸福度 +`calcMarriageHappinessBySalary`
+- 自由职业、失业中、已退休不可升迁
+
+#### 7.9.5 退休
+
+达到 `retireStandardAge` 时自动弹出退休 Modal → `CONFIRM_RETIREMENT`：
+
+| 效果 | 说明 |
+|------|------|
+| `isRetired = true` | 全职工资归零 |
+| `pensionIncome` | `calcPensionIncome(最后月薪)` ≈ 月薪 ×40% |
+| `medicalElderly` | 城市缩放老年医疗月支出 |
+| 事件屏蔽 | 不再升迁/失业 |
+| 保留 | 家庭 doodad、被动收入、破产规则不变 |
+
+自由职业者满 **50 岁** 可在 ActionBar 点击 `MANUAL_RETIRE` 主动退休。
+
+#### 7.9.6 【新增】v3.2 婚姻幸福度与薪资联动
+
+```typescript
+// 每月发工资结算时（processMonthlyLifeEvents）
+export function calcMarriageHappinessBySalary(salary: number): number {
+  return Math.min(8, Math.floor(salary / 1000));  // 月薪越高，家庭越稳
+}
+```
+
+失业触发时一次性幸福度 **-20**（原 v3.1 为 -10，v3.2 加大惩罚）。
 
 ### 7.2 债务体系设计目标
 
@@ -1339,6 +1585,32 @@ TURN_END 阶段可见：
 
 桌面 / 平板 / 手机；StartScreen 城市列表在手机上纵向滚动；RepayModal 手机全屏。
 
+### 10.10 【新增】v3.2 PlayerPanel 年龄与人生阶段
+
+角色面板追加展示：
+
+```
+🎂 32 岁 · 距退休 28 年 · 失业风险 中
+💑 薪资幸福加成约 +8/月（floor(月薪/1000)，上限8）
+🏖️ 已退休 / 🎖️ 升迁 Lv.2
+```
+
+```typescript
+// src/components/PlayerPanel/PlayerPanel.tsx — 【新增】v3.2
+getUnemploymentRiskLevel(age, tier, professionId, retireStandardAge)
+getYearsToRetirement(player)
+calcMarriageHappinessBySalary(salary)
+```
+
+### 10.11 【新增】v3.2 退休/升迁弹窗（CardModal）
+
+| 事件 | 触发 | Action |
+|------|------|--------|
+| 退休 | `age >= retireStandardAge` 跑完一圈 | `CONFIRM_RETIREMENT` |
+| 升迁 | 落点 `promotion` 格 | `CHOOSE_PROMOTION { accept }` |
+
+ActionBar 追加 **🏖️ 主动退休**（自由职业 ≥50 岁，`MANUAL_RETIRE`）。
+
 ---
 
 ## 十一、项目结构
@@ -1667,7 +1939,13 @@ AssetType: 'stock' | 'bond' | 'commodity' | 'reit' | 'derivative'
          | 'overseas' | 'entity' | 'realEstate' | 'business' | 'intellectual'
 
 // 棋盘
-SpaceType: 'payday' | 'opportunity' | 'market' | 'doodad' | 'charity' | 'baby' | 'settlement'
+SpaceType: 'payday' | 'opportunity' | 'market' | 'doodad' | 'charity' | 'baby' | 'marriage' | 'settlement'  // 【新增】v3.1 marriage
+         | 'promotion'  // 【新增】v3.2 升迁格
+
+// 【新增】v3.1 婚恋
+MarriageStatus: 'single' | 'married' | 'divorced'
+PregnancyPath: 'plan' | 'dink' | 'postpone'
+MarketEffectType: ... | 'unemployment' | 'reemployment'
 
 // 状态机
 GamePhase: 'SETUP' | 'ROLLING' | 'MOVING' | 'EVENT_RESOLVING' | 'CARD_DECISION'
@@ -1699,20 +1977,27 @@ type GameAction =
   | { type: 'MOVE_PLAYER' }
   | { type: 'RESOLVE_SPACE' }
   | { type: 'DRAW_CARD'; payload: { cardType: CardType } }
-  | { type: 'BUY_ASSET' }
-  | { type: 'BUY_DISCOUNTED_ASSET' }
+  | { type: 'BUY_ASSET'; payload?: { shareHand?: number } }     // 【新增】v3.1 股票手数
+  | { type: 'BUY_DISCOUNTED_ASSET'; payload?: { shareHand?: number } }
   | { type: 'DECLINE_CARD' }
   | { type: 'PAY_DOODAD' }
   | { type: 'DONATE_CHARITY'; payload: { donate: boolean } }
   | { type: 'CHOOSE_BABY'; payload: { haveBaby: boolean } }     // 【v3.0 新增】
+  | { type: 'CHOOSE_MARRIAGE'; payload: { marry: boolean } }   // 【新增】v3.1
+  | { type: 'CHOOSE_PREGNANCY_PATH'; payload: { path: PregnancyPath } } // 【新增】v3.1
+  | { type: 'CONFIRM_RETIREMENT' }                                     // 【新增】v3.2
+  | { type: 'CHOOSE_PROMOTION'; payload: { accept: boolean } }         // 【新增】v3.2
+  | { type: 'MANUAL_RETIRE' }                                          // 【新增】v3.2
   | { type: 'APPLY_MARKET_EFFECT' }
   | { type: 'DRAW_DISCOUNTED_OPPORTUNITY' }
   | { type: 'END_TURN' }
   | { type: 'TAKE_LOAN'; payload: { amount: number } }
   | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
-  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number } }
+  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
   | { type: 'DECLARE_BANKRUPTCY' };
 ```
+
+> 完整定义见 §3.1；上表为速查，含 v3.0 + v3.1 + v3.2 全部 Action。
 
 ### 15.5 【调整】financial.ts 核心函数索引
 
@@ -1732,6 +2017,13 @@ type GameAction =
 | `getMonthlyCashFlow` | 月现金流 |
 | `checkFinancialFreedom` | 财务自由判定 |
 | `checkBankruptcy` | 破产判定 |
+| `isStockLotAsset` / `stockLotBuyCost` / `stockLotSellProceeds` | 【新增】v3.1 股票按手交易 |
+| `getEffectiveSalary` / `weddingCost` / `divorceSettlement` | 【新增】v3.1 婚恋财务 |
+| `getUnemploymentProbability` / `unemployedMonthlyCashFlow` | 【新增】v3.1 失业 |
+| `calcAgeUnemploymentRate` / `getUnemploymentRiskLevel` | 【新增】v3.2 年龄失业 |
+| `calcPensionIncome` / `calcElderlyMedicalExpense` | 【新增】v3.2 退休财务 |
+| `calcMarriageHappinessBySalary` / `getYearsToRetirement` | 【新增】v3.2 婚恋/年龄 UI |
+| `getProfessionAgeConfig` / `isSelfEmployedProfession` | 【新增】v3.2 职业年龄映射 |
 
 ### 15.6 v3.0 MVP 检查清单
 
@@ -1749,6 +2041,16 @@ type GameAction =
 - [x] PlayerPanel 城市展示
 - [x] CardModal Baby 弹窗
 - [x] houseFirst 免罚期 12 期
+- [x] 【新增】v3.1 股票按手交易（CardModal 手数输入）
+- [x] 【新增】v3.1 婚恋格 + 已婚生育三选一
+- [x] 【新增】v3.1 失业/再就业市场卡
+- [x] PlayerPanel 婚恋/失业/孕期状态展示
+- [x] 【新增】v3.2 年龄/退休/升迁系统
+- [x] 【新增】v3.2 10 张家庭紧急 doodad 卡
+- [x] 【新增】v3.2 PlayerPanel 年龄/距退休/失业风险/薪资幸福加成
+- [x] 【新增】v3.2 CardModal 退休/升迁弹窗
+- [x] 【新增】v3.2 ActionBar 自由职业主动退休
+- [x] 【新增】v3.2 AI 临近退休优先被动收入
 - [ ] RepayModal 交互 polish
 - [ ] 旧存档 EPI 字段全量迁移
 
@@ -1766,5 +2068,133 @@ type GameAction =
 
 ---
 
-*文档版本：v3.0*  
+## 十六、【新增】自动化测试 Agent 系统
+
+> **【新增】v3.3** 本模块与正常游玩完全隔离：`testMode === false` 时 validators 为 no-op，UI 不挂载 AutoTestPanel，玩家手动流程不变。
+
+### 16.1 设计目标
+
+| 目标 | 说明 |
+|------|------|
+| 回归检测 | 自动掷骰、购卡、婚恋/生育/还款，覆盖状态机主干 |
+| Bug 归档 | 每次 reducer 转换后运行 validators，写入 `bugLogs` |
+| 可观测 | AutoTestPanel 实时展示；一键复制 Markdown 报告 |
+| 隔离性 | 仅 `testMode` 开启时生效，不影响正式对局 |
+
+### 16.2 【新增】类型扩展（`src/types/game.ts`）
+
+```typescript
+/** 【新增】v3.3 自动测试 Bug 日志 */
+interface BugLogEntry {
+  id: string;
+  category:
+    | 'card_stuck'
+    | 'deadlock'
+    | 'financial'
+    | 'data_invalid'
+    | 'branch_missing'
+    | 'bankruptcy'
+    | 'state_machine';
+  severity: 'critical' | 'warning';
+  message: string;
+  round: number;
+  playerId: string;
+  action?: string;
+  snapshot?: Partial<GameState>;
+  timestamp: number;
+}
+
+// GameState（testMode 时启用）
+testMode?: boolean;
+testMaxRounds?: number;
+testTimeoutRecord?: Record<string, number>; // phase -> 连续停留次数
+bugLogs?: BugLogEntry[];
+testStopped?: boolean;
+
+// GameConfig
+testMode?: boolean;
+testMaxRounds?: number;
+
+// GameAction
+| { type: 'STOP_AUTO_TEST' }
+```
+
+### 16.3 【新增】`runTestValidators`（`src/utils/testValidators.ts`）
+
+在 `gameReducer` 外层包装：每次 action 后若 `state.testMode`，调用 `runTestValidators(state, prevState, action)`。
+
+| 检测项 | 规则 | category | 默认阈值 |
+|--------|------|----------|----------|
+| 卡死 | `CARD_DECISION` 且 `currentCard === null`（非 baby/marriage/charity/promotion/退休） | `card_stuck` | > 3 次 |
+| 死锁 | 同一 `phase` 连续 reducer 未切换 | `deadlock` | > 5 次 |
+| 骰子残留 | `MOVE_PLAYER` 后 `pendingDice !== null` | `state_machine` | 立即 |
+| 财务异常 | 现金越界、单次变动过大、子女/幸福度非法 | `financial` / `data_invalid` | 立即 |
+| 分支缺失 | 已婚落 baby 格未进 `CARD_DECISION`；单身落婚恋格；结算格未 `TURN_END` | `branch_missing` | 立即 |
+| 破产漏检 | `getMonthlyCashFlow < 0` 且未 `isBankrupt` | `bankruptcy` | 立即 |
+| 回合上限 | `round > testMaxRounds` | `state_machine` | warning |
+
+`testTimeoutRecord` 按 phase 键计数；phase 切换时重置其他 phase 计数。
+
+### 16.4 【新增】`useAutoTestAgent` Hook
+
+路径：`src/hooks/useAutoTestAgent.ts`
+
+- 条件：`testMode && !testStopped && phase !== GAME_OVER`
+- 逻辑：复用困难 AI 决策（`shouldBuyOpportunity` 高 ROI 门槛、优先被动收入等）
+- 主循环：`SETUP → ROLLING → MOVE_PLAYER → CARD_DECISION / TURN_END → END_TURN`，直到 `testMaxRounds` 或 `GAME_OVER`
+- 与 `useAIPlayer` 互斥：`testMode` 时 `useAIPlayer` 直接 return
+
+### 16.5 【新增】StartScreen 入口
+
+- 复选框 **「自动测试模式」**
+- 回合数下拉：**10 / 50 / 200**（写入 `testMaxRounds`）
+- 开启后按钮文案为「开始自动测试」；进入 GameScreen 后挂载 `AutoTestPanel`，由 Agent 代操作全部玩家（含人类位）
+
+### 16.6 【新增】AutoTestPanel 组件
+
+路径：`src/components/AutoTestPanel/AutoTestPanel.tsx`
+
+| 功能 | 行为 |
+|------|------|
+| Bug 列表 | 倒序展示 `bugLogs`，critical / warning 分色 |
+| 导出报告 | 复制「回合 / Bug 数 / 明细」到剪贴板 |
+| 停止测试 | `dispatch STOP_AUTO_TEST`，Agent 停止 dispatch |
+
+### 16.7 【新增】GameReducer 集成
+
+```typescript
+export function gameReducer(state: GameState, action: GameAction): GameState {
+  const nextState = gameReducerSwitch(state, action);
+  return runTestValidators(nextState, state, action);
+}
+```
+
+`!testMode` 时 `runTestValidators` 原样返回，零开销路径。
+
+`END_TURN` 在测试模式下若 `round > testMaxRounds`，设置 `testStopped: true` 并进入 `GAME_OVER`。
+
+### 16.8 【新增】v3.3 Bug 修复摘要（正常游玩）
+
+| 问题 | 修复 |
+|------|------|
+| 发工资日 | 每回合仅触发一次 `handlePayday`（跑圈 OR 落点 payday，不重复）；落点 payday 弹窗确认后结算；退休当圈仍先发工资再弹窗 |
+| 税务结算 | 不再重复扣 `expenses.tax`；改扣 `getPropertyTax`（≥2 套房产），年度格扣 12 个月持有税；结算前弹窗确认 |
+| 生孩子 | 移动时清除 stale `currentCard`；已婚落点稳定进入 `CARD_DECISION` + CardModal 三选一 |
+| 股票按手买 | CardModal 手数整数化、现金流/ROI 随手数缩放；`executeBuyAsset` 强制整手 |
+
+### 16.9 【新增】文件清单
+
+| 文件 | 变更 |
+|------|------|
+| `src/types/game.ts` | BugLogEntry、testMode 字段、STOP_AUTO_TEST |
+| `src/utils/testValidators.ts` | 【新增】validators |
+| `src/hooks/useAutoTestAgent.ts` | 【新增】自动测试 Agent |
+| `src/components/AutoTestPanel/*` | 【新增】测试面板 UI |
+| `src/context/GameReducer.ts` | validator 包装、结算/发薪/生育修复 |
+| `src/components/StartScreen/StartScreen.tsx` | 测试模式开关 |
+| `src/components/GameScreen/GameScreen.tsx` | 挂载 Agent + Panel |
+
+---
+
+*文档版本：v3.3*  
 *最后更新：2026-07-04*

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { useGameActions } from './useGameActions';
 import {
-  canAffordDownPayment,
   canPurchaseOpportunity,
   checkBankruptcy,
   getHighestPriorityDebt,
@@ -20,12 +19,6 @@ function isCrisisEvent(card: Card): boolean {
   if (card.type !== 'market') return false;
   const id = card.id;
   return id.includes('crisis') || id.includes('recession') || id.includes('crackdown');
-}
-
-function isGrowthEvent(card: Card): boolean {
-  if (card.type !== 'market') return false;
-  const id = card.id;
-  return id.includes('ai_boom') || id.includes('new_quality') || id.includes('tech_boom');
 }
 
 function shouldBuyOpportunity(
@@ -50,7 +43,6 @@ function shouldBuyOpportunity(
       ? asset.cashFlow / asset.downPayment
       : 0;
 
-  // 【新增】v3.2 临近退休或高龄时优先被动收入资产
   const yearsToRetire =
     player.retireStandardAge != null ? player.retireStandardAge - player.age : 99;
   const nearRetirement = player.age >= 45 || yearsToRetire <= 10;
@@ -61,9 +53,7 @@ function shouldBuyOpportunity(
   }
 
   if (isStock && player.cash >= stockLotBuyCost(1, asset.singlePrice ?? 0)) {
-    if (player.difficulty === 'hard') return roi > 0.003;
-    if (player.difficulty === 'medium') return roi > 0.002;
-    return Math.random() > 0.5;
+    return roi > 0.003;
   }
 
   if (recentCrisis) {
@@ -74,20 +64,9 @@ function shouldBuyOpportunity(
 
   if (recentGrowth && sector && GROWTH_SECTORS.has(sector)) return true;
 
-  if (player.difficulty === 'hard') {
-    if (sector && DEFENSIVE_SECTORS.has(sector)) return roi > 0.02;
-    if (asset.type === 'bond' || asset.type === 'reit') return roi > 0.02;
-    return roi > 0.05;
-  }
-
-  if (player.difficulty === 'medium') {
-    if (sector && DEFENSIVE_SECTORS.has(sector)) return asset.cashFlow >= 0;
-    if (asset.type === 'bond') return asset.cashFlow > 0;
-    return asset.cashFlow > 0 && canAffordDownPayment(player, asset);
-  }
-
-  if (sector && GROWTH_SECTORS.has(sector)) return Math.random() > 0.4;
-  return Math.random() > 0.7;
+  if (sector && DEFENSIVE_SECTORS.has(sector)) return roi > 0.02;
+  if (asset.type === 'bond' || asset.type === 'reit') return roi > 0.02;
+  return roi > 0.05;
 }
 
 function shouldSellInCrisis(player: Player, card: Card): boolean {
@@ -99,13 +78,16 @@ function shouldSellInCrisis(player: Player, card: Card): boolean {
   return growthAssets.length > 0 ? Math.random() > 0.3 : sellable.length > 0;
 }
 
-export function useAIPlayer() {
+/** 【新增】v3.3 自动测试 Agent：testMode 下自动推进全部玩家回合 */
+export function useAutoTestAgent() {
   const { state } = useGame();
   const actions = useGameActions();
   const player = state.players[state.currentPlayerIndex];
 
   useEffect(() => {
-    if (!player || !player.isAI || state.testMode) return;
+    if (!state.testMode || state.testStopped || state.phase === 'SETUP') return;
+    if (state.phase === 'GAME_OVER') return;
+    if (!player) return;
     if (player.isBankrupt) {
       if (state.phase === 'TURN_END') {
         actions.endTurn();
@@ -139,13 +121,11 @@ export function useAIPlayer() {
             actions.choosePromotion(true);
           }
         } else if (space.type === 'charity') {
-          actions.donateCharity(player.difficulty === 'hard' && player.cash > player.salary * 2);
+          actions.donateCharity(false);
         } else if (space.type === 'marriage') {
           if (player.marriageStatus === 'single' || player.marriageStatus === 'divorced') {
             const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-            actions.chooseMarriage(
-              player.difficulty === 'easy' ? Math.random() > 0.4 : cashFlow > 2000
-            );
+            actions.chooseMarriage(cashFlow > 2000);
           } else if (player.marriageStatus === 'married') {
             if (player.marriageHappiness < 40) {
               actions.resolveMarriageGrid(player.cash >= player.salary * 0.5);
@@ -158,32 +138,18 @@ export function useAIPlayer() {
         } else if (space.type === 'baby') {
           if (player.marriageStatus !== 'married') {
             actions.declineCard();
+          } else if (player.hasPregnancy) {
+            actions.choosePregnancyPath('postpone');
+          } else if (player.children < 3 && getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier) > player.expenses.perChild * 4) {
+            actions.choosePregnancyPath('plan');
           } else {
-            const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-            if (player.hasPregnancy) {
-              actions.choosePregnancyPath('postpone');
-            } else if (player.dinkTurns && player.dinkTurns > 0) {
-              // DINK 风险：困难 AI 更可能维持 DINK
-              actions.choosePregnancyPath(
-                player.difficulty === 'hard' && Math.random() > 0.7 ? 'plan' : 'dink'
-              );
-            } else if (
-              player.children < 3 &&
-              cashFlow > player.expenses.perChild * 2 &&
-              (player.difficulty === 'easy' ? Math.random() > 0.5 : cashFlow > player.expenses.perChild * 4)
-            ) {
-              actions.choosePregnancyPath('plan');
-            } else if (player.difficulty === 'hard' && Math.random() > 0.6) {
-              actions.choosePregnancyPath('dink');
-            } else {
-              actions.choosePregnancyPath('postpone');
-            }
+            actions.choosePregnancyPath('postpone');
           }
         } else if (card?.type === 'opportunity') {
           const recentLogs = state.logs.slice(-5).map((l) => l.message).join(' ');
           const recentCrisis = /金融危机|股灾|衰退|整改/.test(recentLogs);
           const recentGrowth = /AI 产业|算力|新质生产力|科技行业/.test(recentLogs);
-          let buy = shouldBuyOpportunity(
+          const buy = shouldBuyOpportunity(
             player,
             card,
             state.marketMultiplier,
@@ -194,7 +160,9 @@ export function useAIPlayer() {
 
           if (buy) {
             const oppAsset = card.asset;
-            const lots = isStockLotAsset(oppAsset) ? Math.min(5, Math.max(1, Math.floor(player.cash / stockLotBuyCost(1, oppAsset.singlePrice ?? 1)))) : undefined;
+            const lots = isStockLotAsset(oppAsset)
+              ? Math.min(5, Math.max(1, Math.floor(player.cash / stockLotBuyCost(1, oppAsset.singlePrice ?? 1))))
+              : undefined;
             if (space.type === 'market') {
               actions.buyDiscountedAsset(lots);
             } else {
@@ -223,13 +191,7 @@ export function useAIPlayer() {
               actions.declineCard();
             }
           } else if (effect.type === 'discount') {
-            if (isGrowthEvent(card) || Math.random() > 0.4) {
-              actions.drawDiscountedOpportunity();
-            } else {
-              actions.declineCard();
-            }
-          } else if (effect.type === 'unemployment' || effect.type === 'reemployment') {
-            actions.applyMarketEffect();
+            actions.drawDiscountedOpportunity();
           } else {
             actions.applyMarketEffect();
           }
@@ -259,13 +221,14 @@ export function useAIPlayer() {
           const preview = previewRepayment(targetDebt, repayAmount);
           if (preview.totalCost <= player.cash && preview.repayAmount > 0) {
             actions.repayLiability(targetDebt.id, preview.repayAmount);
+            actions.endTurn();
             return;
           }
         }
 
         actions.endTurn();
       }
-    }, 800);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [state, player, actions]);

@@ -1,6 +1,267 @@
-import type { Asset, AssetType, City, DebtType, ExpenseBreakdown, IncomeType, Liability, OpportunityCard, Player } from '../types/game';
+import type { Asset, AssetType, City, DebtType, ExpenseBreakdown, IncomeType, Liability, OpportunityCard, Player, ProfessionTier } from '../types/game';
 import { ALL_ASSET_TYPES } from '../types/game';
 import { CITY_TIER_PRICE_MULTIPLIER, getCityById } from '../data/cities';
+
+/** 【新增】v3.1 A股/港股/ETF 每手股数 */
+export const STOCK_LOT_SIZE = 100;
+
+/** 【新增】v3.1 股票卖出印花税（持有不足1年） */
+export const STOCK_STAMP_TAX_RATE = 0.001;
+
+/** 【新增】v3.1 股票交易佣金率 */
+export const STOCK_COMMISSION_RATE = 0.0003;
+
+export function isStockLotAsset(asset: Asset): boolean {
+  return (
+    asset.type === 'stock' &&
+    asset.shareHand !== undefined &&
+    asset.singlePrice !== undefined &&
+    asset.singlePrice > 0
+  );
+}
+
+/** 【新增】v3.1 股票市场市值 = 手数 × 100 × 单价 */
+export function getStockLotMarketValue(asset: Asset, priceMultiplier = 1): number {
+  if (!isStockLotAsset(asset)) return asset.marketValue;
+  return Math.round((asset.shareHand ?? 0) * STOCK_LOT_SIZE * (asset.singlePrice ?? 0) * priceMultiplier);
+}
+
+/** 【新增】v3.1 股票月股息被动收入 */
+export function getStockLotMonthlyDividend(asset: Asset): number {
+  if (!isStockLotAsset(asset)) return asset.cashFlow;
+  const hands = asset.shareHand ?? 0;
+  const div = asset.yearDivPerShare ?? 0;
+  return Math.round((hands * STOCK_LOT_SIZE * div) / 12);
+}
+
+/** 【新增】v3.1 买入 N 手股票总成本（含佣金） */
+export function stockLotBuyCost(lots: number, singlePrice: number): number {
+  const gross = lots * STOCK_LOT_SIZE * singlePrice;
+  const commission = Math.round(gross * STOCK_COMMISSION_RATE);
+  return gross + commission;
+}
+
+/** 【新增】v3.1 卖出股票净收入（印花税：持有≥12月豁免） */
+export function stockLotSellProceeds(
+  asset: Asset,
+  sellLots: number,
+  priceMultiplier: number,
+  sectorMultiplier: Record<string, number> = {}
+): number {
+  if (!isStockLotAsset(asset)) {
+    return calculateSellProceeds(asset, priceMultiplier, sectorMultiplier);
+  }
+  const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+  const gross = Math.round(sellLots * STOCK_LOT_SIZE * (asset.singlePrice ?? 0) * priceMultiplier * sectorMult);
+  const heldMonths = asset.heldMonths ?? 0;
+  const stampTax = heldMonths >= 12 ? 0 : Math.round(gross * STOCK_STAMP_TAX_RATE);
+  const commission = Math.round(gross * STOCK_COMMISSION_RATE);
+  return gross - stampTax - commission;
+}
+
+/** 【新增】v3.1 构建股票持仓资产 */
+export function buildStockLotAsset(
+  template: Asset,
+  lots: number,
+  purchaseRound: number
+): Asset {
+  const singlePrice = template.singlePrice ?? 0;
+  const yearDiv = template.yearDivPerShare ?? 0;
+  const marketValue = lots * STOCK_LOT_SIZE * singlePrice;
+  const monthlyDiv = Math.round((lots * STOCK_LOT_SIZE * yearDiv) / 12);
+  return {
+    ...template,
+    shareHand: lots,
+    singlePrice,
+    yearDivPerShare: yearDiv,
+    cost: marketValue,
+    downPayment: marketValue,
+    marketValue,
+    cashFlow: monthlyDiv,
+    shares: lots * STOCK_LOT_SIZE,
+    purchaseRound,
+    heldMonths: 0,
+    mortgage: 0,
+  };
+}
+
+/** 【新增】v3.1 婚礼一次性费用（按城市缩放） */
+export function weddingCost(cityId?: string): number {
+  const mult = getCityById(cityId).expenseMultiplier;
+  return Math.round(30000 * mult);
+}
+
+/** 【新增】v3.4 再婚费用 = 初婚 60–80% */
+export function remarriageCost(cityId?: string): number {
+  const base = weddingCost(cityId);
+  const ratio = 0.6 + Math.random() * 0.2;
+  return Math.round(base * ratio);
+}
+
+/** 【新增】v3.1 伴侣月薪加成（约为玩家基准薪资 15%） */
+export function calcPartnerSalary(baseSalary: number, cityId?: string): number {
+  const mult = getCityById(cityId).salaryMultiplier;
+  return Math.round(baseSalary * 0.15 * mult);
+}
+
+/** 【新增】v3.1 已婚每月家庭开销（计入 other） */
+export function marriageOverhead(cityId?: string): number {
+  const mult = getCityById(cityId).expenseMultiplier;
+  return Math.round(800 * mult);
+}
+
+/** 【新增】v3.1 孕期月医疗支出 */
+export function pregnancyMedicalCost(cityId?: string): number {
+  const mult = getCityById(cityId).expenseMultiplier;
+  return Math.round(1200 * mult);
+}
+
+/** 【新增】v3.1 流产一次性费用 */
+export function miscarriageCost(cityId?: string): number {
+  const mult = getCityById(cityId).expenseMultiplier;
+  return Math.round(5000 * mult);
+}
+
+/** 【新增】v3.1 离婚律师费；再婚后再离费用更高 */
+export function divorceLegalFees(cityId?: string, isPostRemarriage = false): number {
+  const mult = getCityById(cityId).expenseMultiplier;
+  const base = Math.round(15000 * mult);
+  return isPostRemarriage ? Math.round(base * 1.5) : base;
+}
+
+/** 【新增】v3.1 有效月薪（失业/婚恋加成/空窗期） */
+export function getEffectiveSalary(player: Player): number {
+  if (player.isRetired) {
+    return player.pensionIncome ?? 0;
+  }
+  if (player.isUnemployed) return 0;
+  if ((player.salaryGapTurnsRemaining ?? 0) > 0) return 0;
+  let salary = player.salary;
+  if (player.marriageStatus === 'married') {
+    const partnerIncome =
+      (player.partnerUnemployedTurnsRemaining ?? 0) > 0 ? 0 : player.partnerSalary;
+    salary += partnerIncome;
+    if (player.marriageHappiness >= 50) {
+      salary = Math.round(salary * 1.1);
+    }
+  }
+  return salary;
+}
+
+/** 【新增】v3.2 年龄关联失业概率乘数 */
+export function calcAgeUnemploymentRate(
+  age: number,
+  _professionTier: ProfessionTier,
+  _professionId: string,
+  retireStandardAge: number | null
+): number {
+  const retire = retireStandardAge ?? 999;
+  const yearsToRetire = retire - age;
+  if (age < 30) return 0.7;
+  if (age < 40) return 0.85;
+  if (yearsToRetire <= 5 && yearsToRetire > 0) return 2.0;
+  if (age >= 50) return 1.5;
+  return 1.0;
+}
+
+/** 【新增】v3.2 失业风险等级标签 */
+export type UnemploymentRiskLevel = '低' | '中' | '高';
+
+export function getUnemploymentRiskLevel(
+  age: number,
+  professionTier: ProfessionTier,
+  professionId: string,
+  retireStandardAge: number | null
+): UnemploymentRiskLevel {
+  const rate = calcAgeUnemploymentRate(age, professionTier, professionId, retireStandardAge);
+  if (rate >= 1.5) return '高';
+  if (rate >= 1.0) return '中';
+  return '低';
+}
+
+/** 【新增】v3.2 退休金（基于退休前最后月薪 × 系数） */
+export function calcPensionIncome(lastSalary: number, _cityId?: string): number {
+  return Math.round(lastSalary * 0.4);
+}
+
+/** 【新增】v3.2 退休后老年医疗月支出 */
+export function calcElderlyMedicalExpense(cityId?: string): number {
+  const mult = getCityById(cityId).expenseMultiplier;
+  return Math.round(1500 * mult);
+}
+
+/** 【新增】v3.2 婚姻幸福度与薪资联动（月薪越高，家庭越稳） */
+export function calcMarriageHappinessBySalary(salary: number): number {
+  return Math.min(8, Math.floor(salary / 1000));
+}
+
+/** 【新增】v3.2 距离退休年数（无强制退休返回 null） */
+export function getYearsToRetirement(player: Player): number | null {
+  if (player.retireStandardAge == null) return null;
+  return Math.max(0, player.retireStandardAge - player.age);
+}
+
+/** 【新增】v3.1 失业触发概率（职业层级越高越低） */
+export function getUnemploymentProbability(tier: ProfessionTier): number {
+  switch (tier) {
+    case 'basic':
+      return 0.85;
+    case 'service':
+      return 0.65;
+    case 'professional':
+      return 0.4;
+    case 'elite':
+      return 0.2;
+    default:
+      return 0.5;
+  }
+}
+
+/** 【新增】v3.1 离婚概率 */
+export function getDivorceProbability(player: Player): number {
+  if (player.marriageStatus !== 'married') return 0;
+  if (player.marriageHappiness < 40) return 0.15;
+  if ((player.dinkTurns ?? 0) >= 12) return 0.1;
+  return 0;
+}
+
+/** 【新增】v3.1 随机幸福度波动 */
+export function rollMarriageHappinessDelta(): number {
+  const roll = Math.random();
+  if (roll < 0.15) return 8;
+  if (roll < 0.3) return -8;
+  if (roll < 0.5) return 5;
+  if (roll < 0.7) return -5;
+  return 0;
+}
+
+export interface DivorceSettlementResult {
+  cashToSpouse: number;
+  legalFees: number;
+  forcedAssetDiscount: number;
+  isPostRemarriage?: boolean;
+}
+
+/** 【新增】v3.1 离婚财产分割估算；再婚后再离分割比例更高 */
+export function divorceSettlement(player: Player): DivorceSettlementResult {
+  const isPostRemarriage = (player.marriageCount ?? 0) >= 2;
+  const cashSplitRatio = isPostRemarriage ? 0.6 : 0.5;
+  return {
+    cashToSpouse: Math.round(player.cash * cashSplitRatio),
+    legalFees: divorceLegalFees(player.cityId, isPostRemarriage),
+    forcedAssetDiscount: isPostRemarriage ? 0.65 : 0.7,
+    isPostRemarriage,
+  };
+}
+
+/** 【新增】v3.1 失业期间月现金流（工资为0，支出继续） */
+export function unemployedMonthlyCashFlow(
+  player: Player,
+  cashFlowMultiplier?: Record<AssetType, number>,
+  sectorMultiplier?: Record<string, number>
+): number {
+  return getPassiveIncome(player, cashFlowMultiplier, sectorMultiplier) - getTotalExpenses(player);
+}
 
 export interface DebtTypeConfig {
   monthlyRate: number;
@@ -511,7 +772,8 @@ export function getAssetCashFlow(
 ): number {
   const typeMult = cashFlowMultiplier[asset.type] ?? 1;
   const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
-  return Math.round(asset.cashFlow * typeMult * sectorMult);
+  const baseFlow = isStockLotAsset(asset) ? getStockLotMonthlyDividend(asset) : asset.cashFlow;
+  return Math.round(baseFlow * typeMult * sectorMult);
 }
 
 export function getPassiveIncome(
@@ -538,11 +800,18 @@ export function isGameAcquiredLiability(liability: Liability): boolean {
 /** 总支出 = 全部负债月供 + 非负债固定支出（不含 expenses.mortgage 等遗留字段，避免重复） */
 export function getFixedExpenses(player: Player): number {
   const liabilityPayments = player.liabilities.reduce((sum, l) => sum + l.monthlyPayment, 0);
+  const pregnancyMedical = player.hasPregnancy ? (player.expenses.medicalPregnancy ?? pregnancyMedicalCost(player.cityId)) : 0;
+  const elderlyMedical = player.isRetired
+    ? (player.expenses.medicalElderly ?? calcElderlyMedicalExpense(player.cityId))
+    : 0;
+  const tempChildBoost =
+    (player.tempExpenseTurnsRemaining ?? 0) > 0 ? (player.tempPerChildBoost ?? 0) : 0;
   const nonDebtFixed =
     player.expenses.tax +
     player.expenses.other +
-    player.children * player.expenses.perChild +
-    getPropertyTax(player);
+    player.children * (player.expenses.perChild + tempChildBoost) +
+    pregnancyMedical +
+    elderlyMedical;
   return liabilityPayments + nonDebtFixed;
 }
 
@@ -561,7 +830,15 @@ export function getMonthlyCashFlow(
   cashFlowMultiplier?: Record<AssetType, number>,
   sectorMultiplier?: Record<string, number>
 ): number {
-  return player.salary + getPassiveIncome(player, cashFlowMultiplier, sectorMultiplier) - getTotalExpenses(player);
+  let salary: number;
+  if (player.isRetired) {
+    salary = player.pensionIncome ?? 0;
+  } else if (player.isUnemployed) {
+    salary = 0;
+  } else {
+    salary = getEffectiveSalary(player);
+  }
+  return salary + getPassiveIncome(player, cashFlowMultiplier, sectorMultiplier) - getTotalExpenses(player);
 }
 
 export function getAssetMarketValue(
@@ -569,6 +846,10 @@ export function getAssetMarketValue(
   multiplier: number,
   sectorMultiplier: Record<string, number> = {}
 ): number {
+  if (isStockLotAsset(asset)) {
+    const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+    return getStockLotMarketValue(asset, multiplier * sectorMult);
+  }
   const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
   return Math.round(asset.marketValue * multiplier * sectorMult);
 }
@@ -686,7 +967,13 @@ export function getTransactionCostRate(assetType: AssetType): number {
   return TRANSACTION_COST_RATES[assetType] ?? 0.001;
 }
 
-export function calculateBuyCost(asset: Asset): number {
+export function calculateBuyCost(asset: Asset, lots?: number): number {
+  if (isStockLotAsset(asset) && lots !== undefined) {
+    return stockLotBuyCost(lots, asset.singlePrice ?? 0);
+  }
+  if (isStockLotAsset(asset)) {
+    return stockLotBuyCost(asset.shareHand ?? 1, asset.singlePrice ?? 0);
+  }
   const fee = Math.round(asset.downPayment * getTransactionCostRate(asset.type));
   return asset.downPayment + fee;
 }
@@ -694,11 +981,21 @@ export function calculateBuyCost(asset: Asset): number {
 export function calculateSellProceeds(
   asset: Asset,
   priceMultiplier: number,
-  sectorMultiplier: Record<string, number> = {}
+  sectorMultiplier: Record<string, number> = {},
+  sellLots?: number
 ): number {
+  if (isStockLotAsset(asset)) {
+    const lots = sellLots ?? asset.shareHand ?? 0;
+    return stockLotSellProceeds(asset, lots, priceMultiplier, sectorMultiplier);
+  }
   const gross = getSellPrice(asset, priceMultiplier, sectorMultiplier);
   const fee = Math.round(gross * getTransactionCostRate(asset.type));
   return gross - fee;
+}
+
+export function canAffordStockLots(player: Player, asset: Asset, lots: number): boolean {
+  if (!isStockLotAsset(asset)) return player.cash >= calculateBuyCost(asset);
+  return player.cash >= stockLotBuyCost(lots, asset.singlePrice ?? 0);
 }
 
 export function canPurchaseOpportunity(

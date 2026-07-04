@@ -10,6 +10,10 @@ export function useGameActions() {
     dispatch({ type: 'SETUP_GAME', payload: config });
   }, [dispatch]);
 
+  const stopAutoTest = useCallback(() => {
+    dispatch({ type: 'STOP_AUTO_TEST' });
+  }, [dispatch]);
+
   const restartGame = useCallback(() => {
     dispatch({ type: 'RESTART_GAME' });
   }, [dispatch]);
@@ -39,12 +43,12 @@ export function useGameActions() {
     dispatch({ type: 'MOVE_PLAYER' });
   }, [dispatch]);
 
-  const buyAsset = useCallback(() => {
-    dispatch({ type: 'BUY_ASSET' });
+  const buyAsset = useCallback((shareHand?: number) => {
+    dispatch({ type: 'BUY_ASSET', payload: shareHand !== undefined ? { shareHand } : undefined });
   }, [dispatch]);
 
-  const buyDiscountedAsset = useCallback(() => {
-    dispatch({ type: 'BUY_DISCOUNTED_ASSET' });
+  const buyDiscountedAsset = useCallback((shareHand?: number) => {
+    dispatch({ type: 'BUY_DISCOUNTED_ASSET', payload: shareHand !== undefined ? { shareHand } : undefined });
   }, [dispatch]);
 
   const declineCard = useCallback(() => {
@@ -61,6 +65,47 @@ export function useGameActions() {
 
   const chooseBaby = useCallback((haveBaby: boolean) => {
     dispatch({ type: 'CHOOSE_BABY', payload: { haveBaby } });
+  }, [dispatch]);
+
+  const chooseMarriage = useCallback((marry: boolean) => {
+    dispatch({ type: 'CHOOSE_MARRIAGE', payload: { marry } });
+  }, [dispatch]);
+
+  const choosePregnancyPath = useCallback((path: import('../types/game').PregnancyPath) => {
+    dispatch({ type: 'CHOOSE_PREGNANCY_PATH', payload: { path } });
+  }, [dispatch]);
+
+  const confirmRetirement = useCallback(() => {
+    dispatch({ type: 'CONFIRM_RETIREMENT' });
+  }, [dispatch]);
+
+  const confirmPayday = useCallback(() => {
+    dispatch({ type: 'CONFIRM_PAYDAY' });
+  }, [dispatch]);
+
+  const confirmSettlement = useCallback(() => {
+    dispatch({ type: 'CONFIRM_SETTLEMENT' });
+  }, [dispatch]);
+
+  const choosePromotion = useCallback(
+    (accept: boolean, jobHopChoice?: 'highPay' | 'stable') => {
+      dispatch({
+        type: 'CHOOSE_PROMOTION',
+        payload: { accept, jobHopChoice },
+      });
+    },
+    [dispatch]
+  );
+
+  const resolveMarriageGrid = useCallback(
+    (counseling?: boolean) => {
+      dispatch({ type: 'RESOLVE_MARRIAGE_GRID', payload: { counseling } });
+    },
+    [dispatch]
+  );
+
+  const manualRetire = useCallback(() => {
+    dispatch({ type: 'MANUAL_RETIRE' });
   }, [dispatch]);
 
   const applyMarketEffect = useCallback(() => {
@@ -83,8 +128,8 @@ export function useGameActions() {
     dispatch({ type: 'REPAY_LIABILITY', payload: { liabilityId, amount } });
   }, [dispatch]);
 
-  const sellAsset = useCallback((assetId: string, multiplier: number) => {
-    dispatch({ type: 'SELL_ASSET', payload: { assetId, multiplier } });
+  const sellAsset = useCallback((assetId: string, multiplier: number, shareHand?: number) => {
+    dispatch({ type: 'SELL_ASSET', payload: { assetId, multiplier, shareHand } });
   }, [dispatch]);
 
   const declareBankruptcy = useCallback(() => {
@@ -94,6 +139,7 @@ export function useGameActions() {
   return {
     setupGame,
     restartGame,
+    stopAutoTest,
     rollAndMove,
     rollSingleDice,
     movePlayer,
@@ -103,6 +149,14 @@ export function useGameActions() {
     payDoodad,
     donateCharity,
     chooseBaby,
+    chooseMarriage,
+    choosePregnancyPath,
+    confirmRetirement,
+    confirmPayday,
+    confirmSettlement,
+    choosePromotion,
+    resolveMarriageGrid,
+    manualRetire,
     applyMarketEffect,
     drawDiscountedOpportunity,
     endTurn,

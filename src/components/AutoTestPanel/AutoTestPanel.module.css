@@ -1,0 +1,91 @@
+.panel {
+  position: fixed;
+  right: 16px;
+  bottom: 120px;
+  width: 320px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 2px solid #2c3e50;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-size: 12px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.meta {
+  color: #666;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.exportBtn,
+.stopBtn {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #bdc3c7;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.exportBtn {
+  background: #ecf0f1;
+}
+
+.stopBtn {
+  background: #ffeaa7;
+}
+
+.stopBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.logList {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.empty {
+  color: #999;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.logItem {
+  padding: 6px 8px;
+  border-radius: 6px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.critical {
+  background: #fdecea;
+  border-left: 3px solid #e74c3c;
+}
+
+.warning {
+  background: #fff8e1;
+  border-left: 3px solid #f39c12;
+}

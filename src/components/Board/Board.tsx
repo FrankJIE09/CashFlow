@@ -13,7 +13,9 @@ const SPACE_BG_COLORS: Record<Space['type'], string> = {
   doodad: '#FFD4D4',
   charity: '#F0D4FF',
   baby: '#FFD9EC',
+  marriage: '#FFD4E5',
   settlement: '#E8E8E8',
+  promotion: '#FFE4B5',
 };
 
 const SPACE_BORDER_COLORS: Record<Space['type'], string> = {
@@ -23,7 +25,9 @@ const SPACE_BORDER_COLORS: Record<Space['type'], string> = {
   doodad: '#FF9AA2',
   charity: '#CBA4E9',
   baby: '#FFB7E6',
+  marriage: '#FF9EC7',
   settlement: '#B5B5B5',
+  promotion: '#FFB347',
 };
 
 function getSpaceGridPosition(spaceId: number): { row: number; col: number } {

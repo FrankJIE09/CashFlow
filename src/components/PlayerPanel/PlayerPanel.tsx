@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../../context/GameContext';
-import { getPlayerProfessionName } from '../../data/professions';
 import { getCityById, CITY_TIER_LABELS } from '../../data/cities';
+import { getPlayerProfessionName } from '../../data/professions';
+import { PROFESSIONS } from '../../data/professions';
 import {
   getMonthlyCashFlow,
   getNetWorth,
@@ -10,6 +11,9 @@ import {
   getTotalExpenses,
   getCurrentDebt,
   getCityExpenseMultiplier,
+  getUnemploymentRiskLevel,
+  getYearsToRetirement,
+  calcMarriageHappinessBySalary,
 } from '../../utils/financial';
 import { canPlayerRepay } from '../../utils/repayEligibility';
 import { formatCurrency } from '../../utils/format';
@@ -54,6 +58,18 @@ export function PlayerPanel() {
   const maxReference = Math.max(Math.abs(monthlyCashFlow), 5000) * 1.5;
   const netWorthMax = Math.max(Math.abs(netWorth), 100000) * 1.2;
   const canRepay = canPlayerRepay(state, selectedPlayer);
+  const profTier = PROFESSIONS.find((p) => p.id === selectedPlayer.professionId)?.tier ?? 'service';
+  const unemploymentRisk = getUnemploymentRiskLevel(
+    selectedPlayer.age,
+    profTier,
+    selectedPlayer.professionId,
+    selectedPlayer.retireStandardAge
+  );
+  const yearsToRetire = getYearsToRetirement(selectedPlayer);
+  const marriageSalaryBonus =
+    selectedPlayer.marriageStatus === 'married'
+      ? calcMarriageHappinessBySalary(selectedPlayer.salary)
+      : 0;
 
   return (
     <div className={`${styles.panel} cartoon-card`}>
@@ -98,7 +114,48 @@ export function PlayerPanel() {
               {selectedPlayer.children > 0 && (
                 <span className={`${styles.badge} ${styles.baby}`}>{STATUS_ICONS.child} ×{selectedPlayer.children}</span>
               )}
+              {selectedPlayer.marriageStatus === 'married' && (
+                <span className={`${styles.badge} ${styles.married}`}>
+                  {STATUS_ICONS.married} 幸福 {selectedPlayer.marriageHappiness}
+                </span>
+              )}
+              {selectedPlayer.marriageStatus === 'divorced' && (
+                <span className={`${styles.badge} ${styles.divorced}`}>{STATUS_ICONS.divorced} 离异</span>
+              )}
+              {selectedPlayer.hasPregnancy && (
+                <span className={`${styles.badge} ${styles.pregnant}`}>{STATUS_ICONS.pregnant} 孕期</span>
+              )}
+              {selectedPlayer.isUnemployed && (
+                <span className={`${styles.badge} ${styles.unemployed}`}>
+                  {STATUS_ICONS.unemployed} 失业 ({selectedPlayer.unemploymentTurnsRemaining}回合)
+                </span>
+              )}
+              {selectedPlayer.isRetired && (
+                <span className={`${styles.badge} ${styles.retired}`}>🏖️ 已退休</span>
+              )}
+              {(selectedPlayer.promotionLevel ?? 0) > 0 && (
+                <span className={`${styles.badge} ${styles.promotion}`}>
+                  🎖️ 升迁 Lv.{selectedPlayer.promotionLevel}
+                </span>
+              )}
             </div>
+            <div className={styles.ageLine}>
+              🎂 {selectedPlayer.age} 岁
+              {yearsToRetire != null && !selectedPlayer.isRetired && (
+                <span> · 距退休 {yearsToRetire} 年</span>
+              )}
+              {selectedPlayer.retireStandardAge == null && !selectedPlayer.isRetired && (
+                <span> · 无强制退休</span>
+              )}
+              {!selectedPlayer.isRetired && (
+                <span> · 失业风险 {unemploymentRisk}</span>
+              )}
+            </div>
+            {selectedPlayer.marriageStatus === 'married' && marriageSalaryBonus > 0 && (
+              <div className={styles.hintLine}>
+                💑 薪资幸福加成约 +{marriageSalaryBonus}/月（floor(月薪/1000)，上限8）
+              </div>
+            )}
           </div>
         </div>
 
@@ -142,8 +199,10 @@ export function PlayerPanel() {
         <div className={styles.statsGrid}>
           <div className={styles.statItem}>
             <span className={styles.statIcon}>💵</span>
-            <span className={styles.statLabel}>工资</span>
-            <span className={styles.statValue}>{formatCurrency(selectedPlayer.salary)}</span>
+            <span className={styles.statLabel}>{selectedPlayer.isRetired ? '养老金' : '工资'}</span>
+            <span className={styles.statValue}>
+              {formatCurrency(selectedPlayer.isRetired ? selectedPlayer.pensionIncome : selectedPlayer.salary)}
+            </span>
           </div>
           <div className={styles.statItem}>
             <span className={styles.statIcon}>📈</span>

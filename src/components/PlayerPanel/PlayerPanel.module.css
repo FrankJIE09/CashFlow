@@ -148,6 +148,49 @@
   color: #C44E80;
 }
 
+.married {
+  background: #FFE0EC;
+  color: #B03060;
+}
+
+.divorced {
+  background: #E8E8E8;
+  color: #666;
+}
+
+.pregnant {
+  background: #FFF0F5;
+  color: #D63384;
+}
+
+.unemployed {
+  background: #FFF3CD;
+  color: #856404;
+}
+
+.retired {
+  background: #E8F4FD;
+  color: #2980b9;
+}
+
+.promotion {
+  background: #FFE4B5;
+  color: #D35400;
+}
+
+.ageLine {
+  font-size: 12px;
+  color: #555;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.hintLine {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
 .moneyDisplay {
   position: relative;
   background: linear-gradient(145deg, #FFF 0%, #FFF8F0 100%);

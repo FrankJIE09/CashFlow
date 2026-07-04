@@ -51,6 +51,8 @@ export function StartScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [aiCount, setAiCount] = useState(0);
   const [aiDifficulty, setAiDifficulty] = useState<Difficulty>('medium');
+  const [testMode, setTestMode] = useState(false);
+  const [testMaxRounds, setTestMaxRounds] = useState(50);
 
   const isCustom = professionId === CUSTOM_PROFESSION_ID;
   const selectedCity = getCityById(cityId);
@@ -87,6 +89,8 @@ export function StartScreen() {
         cityId,
         aiCount,
         aiDifficulty,
+        testMode,
+        testMaxRounds: testMode ? testMaxRounds : undefined,
       });
       return;
     }
@@ -97,6 +101,8 @@ export function StartScreen() {
       cityId,
       aiCount,
       aiDifficulty,
+      testMode,
+      testMaxRounds: testMode ? testMaxRounds : undefined,
     });
   };
 
@@ -307,6 +313,28 @@ export function StartScreen() {
               <option value="hard">困难</option>
             </select>
           </div>
+
+          <div className={styles.field}>
+            <label>
+              <input
+                type="checkbox"
+                checked={testMode}
+                onChange={(e) => setTestMode(e.target.checked)}
+              />
+              {' '}自动测试模式
+            </label>
+          </div>
+
+          {testMode && (
+            <div className={styles.field}>
+              <label>测试回合数</label>
+              <select value={testMaxRounds} onChange={(e) => setTestMaxRounds(Number(e.target.value))}>
+                <option value={10}>10 回合</option>
+                <option value={50}>50 回合</option>
+                <option value={200}>200 回合</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {selectedProfession && previewStats && (
@@ -326,7 +354,7 @@ export function StartScreen() {
         )}
 
         <button className={styles.startButton} onClick={handleStart}>
-          开始游戏
+          {testMode ? '开始自动测试' : '开始游戏'}
         </button>
       </div>
     </div>

@@ -119,6 +119,22 @@
   box-shadow: 0 0 0 var(--color-secondary-dark);
 }
 
+.retireButton {
+  padding: 14px 20px;
+  background: #5dade2;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 18px;
+  box-shadow: 0 5px 0 #2e86c1;
+  transition: all 0.1s;
+}
+
+.retireButton:hover:not(:disabled) {
+  background: #2e86c1;
+  transform: translateY(-2px);
+}
+
 .loanSection {
   display: flex;
   align-items: center;

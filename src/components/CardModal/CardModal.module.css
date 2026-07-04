@@ -274,6 +274,15 @@
   margin-bottom: 10px;
 }
 
+.lotInput {
+  margin-left: 8px;
+  width: 80px;
+  padding: 4px 8px;
+  border: 2px solid #3498db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
 .blockedReason {
   background: #FDEDEC;
   color: #c0392b;

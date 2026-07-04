@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:auto": "tsx scripts/runAutoTest.ts 50",
+    "test:auto": "tsx scripts/runAutoTest.ts"
   },
   "dependencies": {
     "framer-motion": "^12.42.2",
@@ -20,6 +22,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
+    "tsx": "^4.23.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { useGameActions } from '../../hooks/useGameActions';
 import { useSound } from '../../hooks/useSound';
@@ -6,12 +6,18 @@ import type { AssetType } from '../../types/game';
 import {
   calculateBuyCost,
   calculateSellProceeds,
-  canAffordDownPayment,
   canPurchaseOpportunity,
   getAssetPriceMultiplier,
   getAssetTypeLabel,
   getNetWorth,
   getOpportunityAsset,
+  isStockLotAsset,
+  stockLotBuyCost,
+  calcPensionIncome,
+  calcElderlyMedicalExpense,
+  weddingCost,
+  remarriageCost,
+  pregnancyMedicalCost,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
@@ -22,6 +28,7 @@ export function CardModal() {
   const actions = useGameActions();
   const { play } = useSound();
   const hasPlayedRef = useRef(false);
+  const [stockLots, setStockLots] = useState(1);
 
   useEffect(() => {
     if (state.phase === 'CARD_DECISION' && !hasPlayedRef.current) {
@@ -32,11 +39,182 @@ export function CardModal() {
     }
   }, [state.phase, play]);
 
+  useEffect(() => {
+    if (state.phase === 'CARD_DECISION' && state.currentCard?.type === 'opportunity') {
+      const asset = getOpportunityAsset(state.currentCard, state.players[state.currentPlayerIndex]);
+      if (isStockLotAsset(asset)) {
+        setStockLots(1);
+      }
+    }
+  }, [state.phase, state.currentCard?.id, state.currentPlayerIndex]);
+
   if (state.phase !== 'CARD_DECISION') return null;
+  if (state.testMode) return null;
 
   const player = state.players[state.currentPlayerIndex];
   const space = state.spaces[player.position];
   const card = state.currentCard;
+
+  if (state.pendingLifeEvent === 'retirement') {
+    const pension = calcPensionIncome(player.baseSalary ?? player.salary, player.cityId);
+    const elderlyMedical = calcElderlyMedicalExpense(player.cityId);
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.modal}>
+          <div className={styles.cardType} style={{ backgroundColor: '#FFD700' }}>人生里程碑</div>
+          <h2 className={styles.title}>🏖️ 正式退休</h2>
+          <p className={styles.description}>
+            你已 {player.age} 岁，达到法定退休年龄。全职工作结束，转入退休生活。
+          </p>
+          <p className={styles.description}>
+            养老金约 {formatCurrency(pension)}/月 · 老年医疗约 +{formatCurrency(elderlyMedical)}/月
+          </p>
+          <p className={styles.description}>退休后不再触发升迁/失业事件，仍可遭遇家庭支出。</p>
+          <div className={styles.actions}>
+            <button className={styles.primaryButton} onClick={() => actions.confirmRetirement()}>
+              确认退休
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (space.type === 'promotion' && state.careerEvent) {
+    const event = state.careerEvent;
+    const eventColor =
+      event.type === 'layoff'
+        ? '#e74c3c'
+        : event.type === 'jobHop'
+          ? '#3498db'
+          : event.type === 'careerChange'
+            ? '#9b59b6'
+            : event.type === 'reemployment'
+              ? '#2ecc71'
+              : '#FFE4B5';
+
+    if (event.type === 'promotion') {
+      const newSalary = Math.round(player.salary * (1 + (event.salaryBoostPct ?? 0)));
+      const cost = event.cost ?? 0;
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
+            <h2 className={styles.title}>{event.title}</h2>
+            <p className={styles.description}>{event.description}</p>
+            <p className={styles.description}>
+              接受后月薪约 {formatCurrency(newSalary)}，费用 {formatCurrency(cost)}。
+            </p>
+            <div className={styles.actions}>
+              <button
+                className={styles.primaryButton}
+                onClick={() => actions.choosePromotion(true)}
+                disabled={player.cash + 50000 < cost && player.cash < cost}
+              >
+                接受（{formatCurrency(cost)}）
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.choosePromotion(false)}>
+                放弃
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (event.type === 'jobHop') {
+      const highSalary = Math.round(player.salary * (1 + (event.highPayBoostPct ?? 0.4)));
+      const stableSalary = Math.round(player.salary * (1 - (event.stableSalaryCutPct ?? 0.15)));
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
+            <h2 className={styles.title}>{event.title}</h2>
+            <p className={styles.description}>{event.description}</p>
+            <div className={styles.actions}>
+              <button
+                className={styles.primaryButton}
+                onClick={() => actions.choosePromotion(true, 'highPay')}
+              >
+                高薪 Offer（约 {formatCurrency(highSalary)}，{event.highPayGapTurns ?? 2} 回合空窗）
+              </button>
+              <button
+                className={styles.secondaryButton}
+                onClick={() => actions.choosePromotion(true, 'stable')}
+              >
+                稳定岗位（约 {formatCurrency(stableSalary)}，极低裁员风险）
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.choosePromotion(false)}>
+                暂不跳槽
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (event.type === 'layoff') {
+      const severance = Math.round(player.salary * (event.severanceMonths ?? 4));
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
+            <h2 className={styles.title}>{event.title}</h2>
+            <p className={styles.description}>{event.description}</p>
+            <p className={styles.description}>预计补偿 {formatCurrency(severance)}，失业 {event.unemploymentTurns ?? 4} 回合。</p>
+            <div className={styles.actions}>
+              <button className={styles.primaryButton} onClick={() => actions.choosePromotion(true)}>
+                确认收到通知
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (event.type === 'careerChange') {
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
+            <h2 className={styles.title}>{event.title}</h2>
+            <p className={styles.description}>{event.description}</p>
+            <div className={styles.actions}>
+              <button className={styles.primaryButton} onClick={() => actions.choosePromotion(true)}>
+                开始转型
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.choosePromotion(false)}>
+                放弃
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (event.type === 'reemployment') {
+      const base = player.baseSalary ?? player.salary;
+      const restored = Math.round(base * (event.restoredSalaryPct ?? 0.9));
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
+            <h2 className={styles.title}>{event.title}</h2>
+            <p className={styles.description}>{event.description}</p>
+            <p className={styles.description}>再就业月薪约 {formatCurrency(restored)}，立即结束失业。</p>
+            <div className={styles.actions}>
+              <button className={styles.primaryButton} onClick={() => actions.choosePromotion(true)}>
+                接受 Offer
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.choosePromotion(false)}>
+                继续观望
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
 
   if (space.type === 'charity') {
     const donation = Math.round(player.salary * 0.1);
@@ -65,31 +243,191 @@ export function CardModal() {
     );
   }
 
+  if (space.type === 'marriage') {
+    if (player.marriageStatus === 'married') {
+      const h = player.marriageHappiness;
+      if (h >= 70) {
+        return (
+          <div className={styles.overlay}>
+            <div className={styles.modal}>
+              <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>婚姻状态 · 甜蜜</div>
+              <h2 className={styles.title}>💑 婚姻甜蜜期</h2>
+              <p className={styles.description}>幸福度 {h}，感情稳定，工资 +10% 加成生效中。</p>
+              <div className={styles.actions}>
+                <button className={styles.primaryButton} onClick={() => actions.resolveMarriageGrid()}>
+                  继续甜蜜生活（幸福度 +5）
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      if (h >= 40) {
+        return (
+          <div className={styles.overlay}>
+            <div className={styles.modal}>
+              <div className={styles.cardType} style={{ backgroundColor: '#ffd9a0' }}>婚姻状态 · 平淡</div>
+              <h2 className={styles.title}>💑 平淡日常</h2>
+              <p className={styles.description}>幸福度 {h}，需要继续经营家庭关系。</p>
+              <div className={styles.actions}>
+                <button className={styles.primaryButton} onClick={() => actions.resolveMarriageGrid()}>
+                  确认
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      const counselingCost = Math.round(player.salary * 0.5);
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: '#ff6b6b' }}>婚姻状态 · 危机</div>
+            <h2 className={styles.title}>💔 婚姻危机</h2>
+            <p className={styles.description}>幸福度仅 {h}，关系亮红灯。可投资婚姻咨询（{formatCurrency(counselingCost)}）或选择忽视。</p>
+            <div className={styles.actions}>
+              <button
+                className={styles.primaryButton}
+                onClick={() => actions.resolveMarriageGrid(true)}
+                disabled={player.cash + 50000 < counselingCost && player.cash < counselingCost}
+              >
+                婚姻咨询（{formatCurrency(counselingCost)}，幸福度 +15）
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.resolveMarriageGrid(false)}>
+                忽视（幸福度 -5，可能离婚）
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const isRemarriage = player.marriageStatus === 'divorced';
+    const cost = isRemarriage ? remarriageCost(player.cityId) : weddingCost(player.cityId);
+    const canMarry = player.cash >= cost || player.cash + 50000 >= cost;
+    const happiness = isRemarriage ? 50 : 60;
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.modal}>
+          <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>人生选择</div>
+          <h2 className={styles.title}>{isRemarriage ? '💍 再婚机会' : '💍 婚恋格'}</h2>
+          <p className={styles.description}>
+            {isRemarriage
+              ? '你有一次再婚机会。再婚后再离婚将永久失去婚姻资格，且财产分割更严（60%）。'
+              : '你来到了「婚恋格」。是否步入婚姻？'}
+          </p>
+          <p className={styles.description}>
+            {isRemarriage ? '再婚' : '结婚'}费用 {formatCurrency(cost)}，幸福度初始 {happiness}，伴侣月薪加成，幸福≥50 时工资 +10%。
+          </p>
+          <div className={styles.actions}>
+            <button
+              className={styles.primaryButton}
+              onClick={() => actions.chooseMarriage(true)}
+              disabled={!canMarry}
+            >
+              {isRemarriage ? '再婚' : '结婚'}（{formatCurrency(cost)}）
+            </button>
+            <button className={styles.secondaryButton} onClick={() => actions.chooseMarriage(false)}>
+              {isRemarriage ? '暂不' : '保持单身'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (space.type === 'payday' && state.pendingPaydayAmount != null) {
+    const amount = state.pendingPaydayAmount;
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.modal}>
+          <div className={styles.cardType} style={{ backgroundColor: '#C8F6D8' }}>月度结算</div>
+          <h2 className={styles.title}>💰 发工资日</h2>
+          <p className={styles.description}>领取本月工资与被动收入，扣除各项支出后的月现金流将入账。</p>
+          <div className={styles.costInfo}>
+            <span>本月现金流：</span>
+            <span className={amount >= 0 ? styles.positive : styles.cost}>
+              {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
+            </span>
+          </div>
+          <p className={styles.description}>负债计期 +1，并触发月度人生事件结算。</p>
+          <div className={styles.actions}>
+            <button className={styles.primaryButton} onClick={() => actions.confirmPayday()}>
+              确认领取
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (space.type === 'settlement' && state.pendingSettlement) {
+    const { amount, isAnnual } = state.pendingSettlement;
+    const realEstateCount = player.assets.filter((a) => a.type === 'realEstate').length;
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.modal}>
+          <div className={styles.cardType} style={{ backgroundColor: '#E8E8E8' }}>
+            {isAnnual ? '年度结算' : '税务结算'}
+          </div>
+          <h2 className={styles.title}>🏛️ {space.name}</h2>
+          {amount > 0 ? (
+            <>
+              <p className={styles.description}>
+                你持有 {realEstateCount} 套房产（≥2 套触发持有税）。{isAnnual ? '年度结算将一次性扣除 12 个月' : '本月'}房产持有税。
+              </p>
+              <div className={styles.costInfo}>
+                <span>应缴持有税：</span>
+                <span className={styles.cost}>{formatCurrency(amount)}</span>
+              </div>
+              <p className={styles.description}>所得税已在每月现金流中扣减，此处仅扣房产持有税。</p>
+            </>
+          ) : (
+            <p className={styles.description}>
+              你持有房产不足 2 套，无需缴纳房产持有税。所得税已在月现金流中扣减。
+            </p>
+          )}
+          <div className={styles.actions}>
+            <button className={styles.primaryButton} onClick={() => actions.confirmSettlement()}>
+              {amount > 0 ? `确认缴纳 ${formatCurrency(amount)}` : '确认'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (space.type === 'baby') {
-    const perChild = player.expenses.perChild;
-    const atLimit = player.children >= 3;
+    if (player.marriageStatus !== 'married') {
+      return null;
+    }
+    const medical = pregnancyMedicalCost(player.cityId);
+    const atLimit = player.children >= 3 && !player.hasPregnancy;
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
           <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
-          <h2 className={styles.title}>👶 生育计划</h2>
-          <p className={styles.description}>
-            你来到了「生孩子」格子。是否迎接新生命？
-          </p>
-          <p className={styles.description}>
-            生孩子后，每月额外支出 {formatCurrency(perChild)}（当前 {player.children} 个孩子，上限 3 个）。
-          </p>
-          <p className={styles.description}>选择「暂不生育」无任何惩罚。</p>
+          <h2 className={styles.title}>👶 生育计划（已婚）</h2>
+          <p className={styles.description}>请选择你们的生育路径：</p>
           <div className={styles.actions}>
             <button
               className={styles.primaryButton}
-              onClick={() => actions.chooseBaby(true)}
-              disabled={atLimit}
+              onClick={() => actions.choosePregnancyPath('plan')}
+              disabled={atLimit || player.hasPregnancy}
             >
-              {atLimit ? '已达孩子上限' : '生孩子'}
+              计划怀孕（月医疗 +{formatCurrency(medical)}）
             </button>
-            <button className={styles.secondaryButton} onClick={() => actions.chooseBaby(false)}>
-              暂不生育
+            <button
+              className={styles.secondaryButton}
+              onClick={() => actions.choosePregnancyPath('dink')}
+            >
+              DINK（幸福度 -12/月，离婚风险↑）
+            </button>
+            <button
+              className={styles.secondaryButton}
+              onClick={() => actions.choosePregnancyPath('postpone')}
+            >
+              推迟（无变化）
             </button>
           </div>
         </div>
@@ -124,15 +462,16 @@ export function CardModal() {
                     (effect.multiplier || 1) *
                     getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
                   const sellPrice = calculateSellProceeds(asset, effectiveMult, {});
+                  const lotLabel = isStockLotAsset(asset) ? `（${asset.shareHand} 手）` : '';
                   return (
                     <div key={asset.id} className={styles.assetListItem}>
                       <div>
                         <div className={styles.assetListName}>
-                          {getAssetIcon(asset.type)} {asset.name}
+                          {getAssetIcon(asset.type)} {asset.name}{lotLabel}
                         </div>
                         <div className={styles.assetListMeta}>
                           当前市值 {formatCurrency(asset.marketValue)} × {effectiveMult.toFixed(2)} ={' '}
-                          {formatCurrency(sellPrice)}（已扣交易费）
+                          {formatCurrency(sellPrice)}（已扣交易费/印花税）
                         </div>
                       </div>
                       <button
@@ -150,6 +489,29 @@ export function CardModal() {
             <div className={styles.actions}>
               <button className={styles.secondaryButton} onClick={actions.declineCard}>
                 放弃
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (effect.type === 'unemployment' || effect.type === 'reemployment') {
+      return (
+        <div className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>生活事件</div>
+            <h2 className={styles.title}>{card.title}</h2>
+            <p className={styles.description}>{card.description}</p>
+            {player.isUnemployed && effect.type === 'unemployment' && (
+              <p className={styles.description}>你已在失业中（剩余 {player.unemploymentTurnsRemaining} 回合）。</p>
+            )}
+            {!player.isUnemployed && effect.type === 'reemployment' && (
+              <p className={styles.description}>你目前在职，此机会不适用。</p>
+            )}
+            <div className={styles.actions}>
+              <button className={styles.primaryButton} onClick={actions.applyMarketEffect}>
+                确认
               </button>
             </div>
           </div>
@@ -269,9 +631,17 @@ export function CardModal() {
     const asset = getOpportunityAsset(card, player);
     const meta = asset.metadata;
     const isDiscounted = space.type === 'market';
+    const isStock = isStockLotAsset(asset);
+    const lots = isStock ? Math.max(1, Math.floor(stockLots)) : 1;
+    const lotPrincipal = isStock ? lots * 100 * (asset.singlePrice ?? 0) : asset.downPayment;
+    const lotCashFlow = isStock
+      ? Math.round((lots * 100 * (asset.yearDivPerShare ?? 0)) / 12)
+      : asset.cashFlow;
     const purchaseGate = canPurchaseOpportunity(player, card, state.marketMultiplier, state.sectorMultiplier);
-    const totalBuyCost = calculateBuyCost(asset) + (card.dueDiligenceCost ?? 0);
-    const affordable = canAffordDownPayment(player, asset) && player.cash >= totalBuyCost - asset.downPayment;
+    const totalBuyCost = isStock
+      ? stockLotBuyCost(lots, asset.singlePrice ?? 0) + (card.dueDiligenceCost ?? 0)
+      : calculateBuyCost(asset) + (card.dueDiligenceCost ?? 0);
+    const affordable = player.cash >= totalBuyCost;
     const shortfall = totalBuyCost - player.cash;
     const canLoan = shortfall > 0 && purchaseGate.allowed;
 
@@ -285,6 +655,27 @@ export function CardModal() {
             {getAssetIcon(asset.type)} {card.title}
           </h2>
           <p className={styles.description}>{card.description}</p>
+
+          {isStock && (
+            <div className={styles.gateInfo}>
+              <label>
+                买入手数（整数，1手=100股）：
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={stockLots}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setStockLots(Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1);
+                  }}
+                  className={styles.lotInput}
+                />
+              </label>
+              <div>单价 {formatCurrency(asset.singlePrice ?? 0)} × {lots} 手 = {formatCurrency(lots * 100 * (asset.singlePrice ?? 0))}</div>
+              <div>含佣金总支出：{formatCurrency(totalBuyCost)}</div>
+            </div>
+          )}
 
           {meta && (
             <div className={styles.fundamentals}>
@@ -324,7 +715,9 @@ export function CardModal() {
             </div>
             <div className={styles.assetRow}>
               <span>首付/本金</span>
-              <span className={styles.highlight}>{formatCurrency(asset.downPayment)}</span>
+              <span className={styles.highlight}>
+                {isStock ? `${lots} 手 (${formatCurrency(lotPrincipal)})` : formatCurrency(asset.downPayment)}
+              </span>
               {isDiscounted && <span className={styles.discountTag}>打折</span>}
             </div>
             <div className={styles.assetRow}>
@@ -333,7 +726,7 @@ export function CardModal() {
             </div>
             <div className={styles.assetRow}>
               <span>月现金流</span>
-              <span className={styles.positive}>+{formatCurrency(asset.cashFlow)}</span>
+              <span className={styles.positive}>+{formatCurrency(lotCashFlow)}</span>
             </div>
             <div className={styles.assetRow}>
               <span>含交易费总支出</span>
@@ -341,7 +734,9 @@ export function CardModal() {
             </div>
             <div className={styles.assetRow}>
               <span>投资回报率</span>
-              <span>{asset.downPayment > 0 ? ((asset.cashFlow / asset.downPayment) * 100).toFixed(1) : '0'}%</span>
+              <span>
+                {lotPrincipal > 0 ? ((lotCashFlow / lotPrincipal) * 100).toFixed(1) : '0'}%
+              </span>
             </div>
           </div>
 
@@ -352,7 +747,11 @@ export function CardModal() {
           <div className={styles.actions}>
             <button
               className={styles.primaryButton}
-              onClick={isDiscounted ? actions.buyDiscountedAsset : actions.buyAsset}
+              onClick={() =>
+                isDiscounted
+                  ? actions.buyDiscountedAsset(isStock ? lots : undefined)
+                  : actions.buyAsset(isStock ? lots : undefined)
+              }
               disabled={!purchaseGate.allowed || (!affordable && !canLoan)}
             >
               {affordable ? '买入' : purchaseGate.allowed ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}

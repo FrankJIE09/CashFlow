@@ -337,11 +337,60 @@ export function validateCustomProfession(config: CustomProfessionConfig): Custom
   if (!config.name.trim()) errors.push('请填写职业名称');
   if (config.salary <= 0) errors.push('月薪必须大于 0');
   if (config.tax < 0) errors.push('税金不能为负');
-  if (config.other < 0) errors.push('其它支出不能为负');
+  if ((config.other ?? 0) < 0) errors.push('其它支出不能为负');
   if ((config.cash ?? 0) < 0) errors.push('初始现金不能为负');
   if ((config.mortgagePrincipal ?? 0) < 0) errors.push('房贷本金不能为负');
   if ((config.carLoanPrincipal ?? 0) < 0) errors.push('车贷本金不能为负');
   if ((config.studentLoanPrincipal ?? 0) < 0) errors.push('学贷本金不能为负');
   if ((config.creditCardDebt ?? 0) < 0) errors.push('信用卡欠款不能为负');
   return { valid: errors.length === 0, errors };
+}
+
+/** 【新增】v3.2 职业年龄/退休配置 */
+export type ProfessionAgeCategory =
+  | 'blueCollar'
+  | 'whiteCollar'
+  | 'tech'
+  | 'highSalary'
+  | 'publicSector'
+  | 'selfEmployed';
+
+export interface ProfessionAgeConfig {
+  baseStartAge: number;
+  retireStandardAge: number | null;
+  ageCategory: ProfessionAgeCategory;
+}
+
+const PROFESSION_AGE_MAP: Record<string, ProfessionAgeConfig> = {
+  delivery: { baseStartAge: 22, retireStandardAge: 55, ageCategory: 'blueCollar' },
+  security: { baseStartAge: 22, retireStandardAge: 55, ageCategory: 'blueCollar' },
+  factory: { baseStartAge: 22, retireStandardAge: 55, ageCategory: 'blueCollar' },
+  driver: { baseStartAge: 22, retireStandardAge: 55, ageCategory: 'blueCollar' },
+  cashier: { baseStartAge: 22, retireStandardAge: 55, ageCategory: 'blueCollar' },
+  secretary: { baseStartAge: 24, retireStandardAge: 60, ageCategory: 'whiteCollar' },
+  accountant: { baseStartAge: 24, retireStandardAge: 60, ageCategory: 'whiteCollar' },
+  designer: { baseStartAge: 24, retireStandardAge: 60, ageCategory: 'whiteCollar' },
+  nurse: { baseStartAge: 24, retireStandardAge: 60, ageCategory: 'whiteCollar' },
+  sales: { baseStartAge: 24, retireStandardAge: 60, ageCategory: 'whiteCollar' },
+  engineer: { baseStartAge: 25, retireStandardAge: 60, ageCategory: 'tech' },
+  doctor: { baseStartAge: 28, retireStandardAge: 65, ageCategory: 'highSalary' },
+  lawyer: { baseStartAge: 28, retireStandardAge: 65, ageCategory: 'highSalary' },
+  pilot: { baseStartAge: 28, retireStandardAge: 65, ageCategory: 'highSalary' },
+  teacher: { baseStartAge: 25, retireStandardAge: 65, ageCategory: 'publicSector' },
+  freelancer: { baseStartAge: 30, retireStandardAge: null, ageCategory: 'selfEmployed' },
+  custom: { baseStartAge: 24, retireStandardAge: 60, ageCategory: 'whiteCollar' },
+};
+
+export function getProfessionAgeConfig(professionId: string): ProfessionAgeConfig {
+  return (
+    PROFESSION_AGE_MAP[professionId] ?? {
+      baseStartAge: 24,
+      retireStandardAge: 60,
+      ageCategory: 'whiteCollar',
+    }
+  );
+}
+
+export function isSelfEmployedProfession(professionId: string): boolean {
+  return getProfessionAgeConfig(professionId).ageCategory === 'selfEmployed';
 }

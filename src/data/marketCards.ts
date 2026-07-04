@@ -395,4 +395,18 @@ export const MARKET_CARDS: MarketCard[] = [
     type: 'market',
     effect: { type: 'sectorBoom', sector: 'stock', multiplier: 2 },
   },
+  {
+    id: 'life_unemployment',
+    title: '公司裁员 / 行业下行失业',
+    description: '经济寒冬来袭，你的行业遭遇裁员潮。职业层级越低，失业风险越高。',
+    type: 'market',
+    effect: { type: 'unemployment', eventCategory: 'economicCycle' },
+  },
+  {
+    id: 'life_reemployment',
+    title: '再就业机遇',
+    description: '市场回暖，你收到新的工作机会。薪资可能恢复或略有下降。',
+    type: 'market',
+    effect: { type: 'reemployment', eventCategory: 'economicCycle' },
+  },
 ];

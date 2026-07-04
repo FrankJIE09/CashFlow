@@ -14,24 +14,29 @@ function stock(
   kind: 'smallDeal' | 'bigDeal',
   extra?: Partial<OpportunityCard>
 ): OpportunityCard {
-  const cost = price * shares;
-  const monthlyDividend = Math.round((cost * dividendYield) / 12);
+  const shareHand = Math.max(1, Math.round(shares / 100));
+  const yearDivPerShare = price * dividendYield;
+  const marketValue = shareHand * 100 * price;
+  const monthlyDividend = Math.round((shareHand * 100 * yearDivPerShare) / 12);
   return {
     id,
     title: `${name} (${ticker})`,
-    description: `${exchange}上市${sector}龙头，股息率约 ${(dividendYield * 100).toFixed(1)}%。`,
+    description: `${exchange}上市${sector}龙头，股息率约 ${(dividendYield * 100).toFixed(1)}%，按手交易（1手=100股）。`,
     type: 'opportunity',
     kind,
     asset: {
       id: `${id}_asset`,
       name,
       type: 'stock',
-      cost,
-      downPayment: cost,
+      cost: marketValue,
+      downPayment: marketValue,
       cashFlow: monthlyDividend,
       mortgage: 0,
-      marketValue: cost,
-      shares,
+      marketValue,
+      shares: shareHand * 100,
+      shareHand,
+      singlePrice: price,
+      yearDivPerShare,
       metadata: {
         sector,
         ticker,
@@ -43,7 +48,7 @@ function stock(
         peTTM,
         pb,
         dividendYield,
-        minInvestment: cost,
+        minInvestment: 100 * price,
       },
     },
     ...extra,
@@ -143,6 +148,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 8500,
       shares: 5000,
+      shareHand: 50,
+      singlePrice: 1.7,
+      yearDivPerShare: 1.7 * 0.055,
       metadata: {
         sector: '金融',
         ticker: '515080',
@@ -174,6 +182,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 9500,
       shares: 10000,
+      shareHand: 100,
+      singlePrice: 0.95,
+      yearDivPerShare: 0,
       metadata: {
         sector: '科技',
         ticker: '588000',

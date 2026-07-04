@@ -48,7 +48,44 @@ export type SpaceType =
   | 'doodad'
   | 'charity'
   | 'baby'
-  | 'settlement';
+  | 'marriage'
+  | 'settlement'
+  | 'promotion'; // 【新增】v3.2 升迁格
+
+/** 【新增】v3.1 婚恋状态；ineligible = 二次离婚后永久不可再婚 */
+export type MarriageStatus = 'single' | 'married' | 'divorced' | 'ineligible';
+
+/** 【新增】v3.4 职业事件类型 */
+export type CareerEventType =
+  | 'promotion'
+  | 'jobHop'
+  | 'layoff'
+  | 'careerChange'
+  | 'reemployment';
+
+export interface CareerEvent {
+  type: CareerEventType;
+  title: string;
+  description: string;
+  salaryBoostPct?: number;
+  cost?: number;
+  monthlyHappinessBoost?: number;
+  severanceMonths?: number;
+  unemploymentTurns?: number;
+  happinessDelta?: number;
+  highPayBoostPct?: number;
+  highPayGapTurns?: number;
+  highPayLayoffRiskTurns?: number;
+  stableSalaryCutPct?: number;
+  transitionSalaryRatio?: number;
+  recoveryTurns?: number;
+  targetSalaryBoostPct?: number;
+  failureCost?: number;
+  restoredSalaryPct?: number;
+}
+
+/** 【新增】v3.1 生育路径选择 */
+export type PregnancyPath = 'plan' | 'dink' | 'postpone';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -59,7 +96,9 @@ export type MarketEffectType =
   | 'interestRate'
   | 'discount'
   | 'sectorBoom'
-  | 'macroEvent';
+  | 'macroEvent'
+  | 'unemployment'
+  | 'reemployment';
 
 export type EventCategory =
   | 'economicCycle'
@@ -127,6 +166,10 @@ export interface ExpenseBreakdown {
   perChild: number;
   /** 多套房产持有时的额外房产税（动态计算，初始为 0） */
   taxHouse?: number;
+  /** 【新增】v3.1 孕期医疗月支出 */
+  medicalPregnancy?: number;
+  /** 【新增】v3.2 退休后老年医疗月支出 */
+  medicalElderly?: number;
 }
 
 export interface Asset {
@@ -139,6 +182,16 @@ export interface Asset {
   mortgage: number;
   marketValue: number;
   shares?: number;
+  /** 【新增】v3.1 股票手数（1手=100股） */
+  shareHand?: number;
+  /** 【新增】v3.1 每股单价 */
+  singlePrice?: number;
+  /** 【新增】v3.1 每股年化股息（元） */
+  yearDivPerShare?: number;
+  /** 【新增】v3.1 买入时的游戏回合（用于持有期判定） */
+  purchaseRound?: number;
+  /** 【新增】v3.1 已持有月数（每经过一次发工资 +1） */
+  heldMonths?: number;
   metadata?: AssetMetadata;
 }
 
@@ -183,6 +236,8 @@ export interface Player {
   position: number;
   cash: number;
   salary: number;
+  /** 【新增】v3.1 失业前基准月薪（再就业可能降薪） */
+  baseSalary?: number;
   expenses: ExpenseBreakdown;
   children: number;
   assets: Asset[];
@@ -195,6 +250,49 @@ export interface Player {
   isAI: boolean;
   difficulty?: Difficulty;
   isBankrupt: boolean;
+  /** 【新增】v3.1 婚恋 */
+  marriageStatus: MarriageStatus;
+  marriageHappiness: number;
+  partnerSalary: number;
+  hasPregnancy: boolean;
+  /** 孕期进度（月），满 9 分娩 */
+  pregnancyMonths?: number;
+  /** DINK 持续月数 */
+  dinkTurns?: number;
+  /** 【新增】v3.1 失业 */
+  isUnemployed?: boolean;
+  unemploymentTurnsRemaining?: number;
+  /** 【新增】v3.2 年龄与退休 */
+  age: number;
+  baseStartAge: number;
+  /** null 或 999 表示无强制退休（自由职业） */
+  retireStandardAge: number | null;
+  currentGameYear: number;
+  isRetired: boolean;
+  pensionIncome: number;
+  promotionLevel?: number;
+  /** 【新增】v3.4 内部晋升次数（上限 3） */
+  promotionCount?: number;
+  /** 【新增】v3.4 结婚次数（含再婚） */
+  marriageCount?: number;
+  /** 【新增】v3.4 离婚次数 */
+  divorceCount?: number;
+  /** 【新增】v3.4 裁员概率乘数（<1 降低风险） */
+  layoffRiskModifier?: number;
+  /** 【新增】v3.4 临时裁员风险上升剩余回合 */
+  layoffRiskBoostTurnsRemaining?: number;
+  /** 【新增】v3.4 跳槽空窗期（无工资但非失业） */
+  salaryGapTurnsRemaining?: number;
+  /** 【新增】v3.4 职业转型进度 */
+  careerTransitionTurnsRemaining?: number;
+  careerTransitionBaseSalary?: number;
+  careerTransitionTargetBoostPct?: number;
+  /** 【新增】v3.4 晋升带来的每月幸福度加成 */
+  monthlyMarriageHappinessBoost?: number;
+  /** 【新增】v3.2 家庭事件临时状态 */
+  partnerUnemployedTurnsRemaining?: number;
+  tempPerChildBoost?: number;
+  tempExpenseTurnsRemaining?: number;
 }
 
 export interface Space {
@@ -249,6 +347,12 @@ export interface DoodadCard extends BaseCard {
   cost: number;
   isRecurring: boolean;
   monthlyCost?: number;
+  /** 【新增】v3.2 家庭紧急事件扩展 */
+  happinessDelta?: number;
+  partnerUnemploymentTurns?: number;
+  tempPerChildBoost?: number;
+  tempExpenseTurns?: number;
+  isFamilyEvent?: boolean;
 }
 
 export type Card = OpportunityCard | MarketCard | DoodadCard;
@@ -267,6 +371,26 @@ export interface LogEntry {
   type: 'move' | 'income' | 'expense' | 'asset' | 'liability' | 'market' | 'system' | 'win' | 'repay';
 }
 
+/** 【新增】v3.3 自动测试 Bug 日志条目 */
+export interface BugLogEntry {
+  id: string;
+  category:
+    | 'card_stuck'
+    | 'deadlock'
+    | 'financial'
+    | 'data_invalid'
+    | 'branch_missing'
+    | 'bankruptcy'
+    | 'state_machine';
+  severity: 'critical' | 'warning';
+  message: string;
+  round: number;
+  playerId: string;
+  action?: string;
+  snapshot?: Partial<GameState>;
+  timestamp: number;
+}
+
 export interface GameState {
   phase: GamePhase;
   players: Player[];
@@ -283,6 +407,22 @@ export interface GameState {
   winner: Player | null;
   logs: LogEntry[];
   pendingDice: number | null;
+  /** 【新增】v3.2 待处理人生事件（退休弹窗等） */
+  pendingLifeEvent?: 'retirement' | null;
+  /** 【新增】v3.2 升迁机会报价（兼容旧逻辑） */
+  promotionOffer?: { salaryBoostPct: number; cost: number } | null;
+  /** 【新增】v3.4 职业事件（升迁格随机池） */
+  careerEvent?: CareerEvent | null;
+  /** 待发工资弹窗：落点 payday 时展示月现金流，确认后再结算 */
+  pendingPaydayAmount?: number | null;
+  /** 待税务结算弹窗：确认后再扣款 */
+  pendingSettlement?: { amount: number; isAnnual: boolean } | null;
+  /** 【新增】v3.3 自动测试模式 */
+  testMode?: boolean;
+  testMaxRounds?: number;
+  testTimeoutRecord?: Record<string, number>;
+  bugLogs?: BugLogEntry[];
+  testStopped?: boolean;
 }
 
 export interface GameConfig {
@@ -294,6 +434,9 @@ export interface GameConfig {
   cityId: string;
   aiCount: number;
   aiDifficulty: Difficulty;
+  /** 【新增】v3.3 自动测试模式 */
+  testMode?: boolean;
+  testMaxRounds?: number;
 }
 
 export interface Profession {
@@ -318,16 +461,25 @@ export type GameAction =
   | { type: 'MOVE_PLAYER' }
   | { type: 'RESOLVE_SPACE' }
   | { type: 'DRAW_CARD'; payload: { cardType: CardType } }
-  | { type: 'BUY_ASSET' }
-  | { type: 'BUY_DISCOUNTED_ASSET' }
+  | { type: 'BUY_ASSET'; payload?: { shareHand?: number } }
+  | { type: 'BUY_DISCOUNTED_ASSET'; payload?: { shareHand?: number } }
   | { type: 'DECLINE_CARD' }
   | { type: 'PAY_DOODAD' }
   | { type: 'DONATE_CHARITY'; payload: { donate: boolean } }
   | { type: 'CHOOSE_BABY'; payload: { haveBaby: boolean } }
+  | { type: 'CHOOSE_MARRIAGE'; payload: { marry: boolean } }
+  | { type: 'CHOOSE_PREGNANCY_PATH'; payload: { path: PregnancyPath } }
+  | { type: 'CONFIRM_RETIREMENT' }
+  | { type: 'CONFIRM_PAYDAY' }
+  | { type: 'CONFIRM_SETTLEMENT' }
+  | { type: 'CHOOSE_PROMOTION'; payload: { accept: boolean; jobHopChoice?: 'highPay' | 'stable' } }
+  | { type: 'RESOLVE_MARRIAGE_GRID'; payload: { counseling?: boolean } }
+  | { type: 'MANUAL_RETIRE' }
   | { type: 'APPLY_MARKET_EFFECT' }
   | { type: 'DRAW_DISCOUNTED_OPPORTUNITY' }
   | { type: 'END_TURN' }
   | { type: 'TAKE_LOAN'; payload: { amount: number } }
   | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
-  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number } }
-  | { type: 'DECLARE_BANKRUPTCY' };
+  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
+  | { type: 'DECLARE_BANKRUPTCY' }
+  | { type: 'STOP_AUTO_TEST' };

@@ -1,5 +1,6 @@
-import type { Asset, AssetType, Card, CardType, GameAction, GameConfig, GameState, MarketEffect, OpportunityCard, Player } from '../types/game';
-import { PROFESSIONS, PLAYER_COLORS, CUSTOM_PROFESSION_ID, buildCustomProfession } from '../data/professions';
+import type { Asset, AssetType, Card, CardType, GameAction, GameConfig, GameState, MarketEffect, OpportunityCard, Player, PregnancyPath, Space } from '../types/game';
+import { runTestValidators } from '../utils/testValidators';
+import { PROFESSIONS, PLAYER_COLORS, CUSTOM_PROFESSION_ID, buildCustomProfession, getProfessionAgeConfig, isSelfEmployedProfession } from '../data/professions';
 import { getCityById, DEFAULT_CITY_ID } from '../data/cities';
 import { SPACES } from '../data/boardLayout';
 import { OPPORTUNITY_CARDS } from '../data/opportunityCards';
@@ -18,23 +19,381 @@ import {
   getAssetTypeLabel,
   getMonthlyCashFlow,
   getOpportunityAsset,
+  getPropertyTax,
   getRealEstateMortgageDebtType,
   getTotalAssetsValue,
   inferDebtTypeFromLiability,
   inferProfessionDebtType,
   isAssetTypeKey,
+  isStockLotAsset,
+  buildStockLotAsset,
   normalizeLiability,
   syncExpenseOnRepay,
   calcLiabilityMonthlyPayment,
   applyCityTierDownPayment,
   scaleAssetByPlayerCity,
   recalcAllPlayersMortgagesOnRateChange,
+  weddingCost,
+  remarriageCost,
+  calcPartnerSalary,
+  marriageOverhead,
+  pregnancyMedicalCost,
+  miscarriageCost,
+  divorceSettlement,
+  getDivorceProbability,
+  rollMarriageHappinessDelta,
+  getUnemploymentProbability,
+  calcAgeUnemploymentRate,
+  calcPensionIncome,
+  calcElderlyMedicalExpense,
+  calcMarriageHappinessBySalary,
+  stockLotSellProceeds,
 } from '../utils/financial';
 import { drawCard, generateId, shuffle } from '../utils/random';
+import { canReceiveCareerEvent, rollCareerEvent } from '../utils/career';
+import type { CareerEvent } from '../types/game';
 
 const CHARITY_TURNS = 3;
 const CHILDREN_LIMIT = 3;
 const FAST_TRACK_WIN_AMOUNT = 500000;
+const PREGNANCY_DURATION = 9;
+
+function getProfessionTier(player: Player): import('../types/game').ProfessionTier {
+  const prof = PROFESSIONS.find((p) => p.id === player.professionId);
+  return prof?.tier ?? 'service';
+}
+
+function canReceivePromotion(player: Player): boolean {
+  return canReceiveCareerEvent(player);
+}
+
+function careerEventToLegacyOffer(event: CareerEvent): { salaryBoostPct: number; cost: number } | null {
+  if (event.type === 'promotion' && event.salaryBoostPct != null && event.cost != null) {
+    return { salaryBoostPct: event.salaryBoostPct, cost: event.cost };
+  }
+  return null;
+}
+
+function incrementAgeOnLap(state: GameState, playerIndex: number): GameState {
+  let newState = updatePlayer(state, playerIndex, (p) => ({
+    ...p,
+    age: p.age + 1,
+    currentGameYear: p.currentGameYear + 1,
+  }));
+  const updated = newState.players[playerIndex];
+  newState = addLog(
+    newState,
+    updated.id,
+    `${updated.name} 跑完一圈，又长一岁，现年 ${updated.age} 岁`,
+    'system'
+  );
+
+  if (
+    updated.retireStandardAge != null &&
+    updated.age >= updated.retireStandardAge &&
+    !updated.isRetired
+  ) {
+    return {
+      ...newState,
+      pendingLifeEvent: 'retirement',
+      phase: 'CARD_DECISION',
+      currentCard: null,
+    };
+  }
+  return newState;
+}
+
+function executeRetirement(state: GameState, playerIndex: number): GameState {
+  const player = state.players[playerIndex];
+  const lastSalary = player.baseSalary ?? player.salary;
+  const pension = calcPensionIncome(lastSalary, player.cityId);
+  const elderlyMedical = calcElderlyMedicalExpense(player.cityId);
+
+  let newState = updatePlayer(state, playerIndex, (p) => ({
+    ...p,
+    isRetired: true,
+    salary: 0,
+    pensionIncome: pension,
+    baseSalary: lastSalary,
+    isUnemployed: false,
+    unemploymentTurnsRemaining: 0,
+    expenses: { ...p.expenses, medicalElderly: elderlyMedical },
+  }));
+  newState = addLog(
+    newState,
+    player.id,
+    `${player.name} 正式退休！养老金 ${pension}/月，老年医疗 +${elderlyMedical}/月`,
+    'system'
+  );
+  return checkAndHandleBankruptcy(newState);
+}
+
+function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameState {
+  let newState = state;
+
+  // 股票持有月数 +1
+  newState = updatePlayer(newState, playerIndex, (p) => ({
+    ...p,
+    assets: p.assets.map((a) =>
+      isStockLotAsset(a) ? { ...a, heldMonths: (a.heldMonths ?? 0) + 1 } : a
+    ),
+  }));
+
+  const updated = newState.players[playerIndex];
+
+  // 跳槽空窗期
+  if ((updated.salaryGapTurnsRemaining ?? 0) > 0) {
+    const remaining = (updated.salaryGapTurnsRemaining ?? 1) - 1;
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      salaryGapTurnsRemaining: remaining,
+    }));
+    if (remaining <= 0) {
+      newState = addLog(newState, updated.id, `${updated.name} 空窗期结束，恢复发薪`, 'system');
+    }
+  }
+
+  // 临时裁员风险上升倒计时
+  if ((updated.layoffRiskBoostTurnsRemaining ?? 0) > 0) {
+    const remaining = (updated.layoffRiskBoostTurnsRemaining ?? 1) - 1;
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      layoffRiskBoostTurnsRemaining: remaining,
+      ...(remaining <= 0
+        ? { layoffRiskModifier: Math.max(0.05, (p.layoffRiskModifier ?? 1) / 1.5) }
+        : {}),
+    }));
+  }
+
+  // 职业转型薪资恢复
+  if ((updated.careerTransitionTurnsRemaining ?? 0) > 0) {
+    const remaining = (updated.careerTransitionTurnsRemaining ?? 1) - 1;
+    const base = updated.careerTransitionBaseSalary ?? updated.baseSalary ?? updated.salary;
+    const targetBoost = updated.careerTransitionTargetBoostPct ?? 0.15;
+    const targetSalary = Math.round(base * (1 + targetBoost));
+    const startSalary = Math.round(base * 0.5);
+    const totalTurns = 5;
+    const elapsed = totalTurns - remaining;
+    const progress = Math.min(1, elapsed / totalTurns);
+    const newSalary = Math.round(startSalary + (targetSalary - startSalary) * progress);
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      careerTransitionTurnsRemaining: remaining,
+      salary: newSalary,
+      ...(remaining <= 0
+        ? {
+            baseSalary: targetSalary,
+            careerTransitionBaseSalary: undefined,
+            careerTransitionTargetBoostPct: undefined,
+            layoffRiskModifier: Math.max(0.05, (p.layoffRiskModifier ?? 1) * 0.85),
+          }
+        : {}),
+    }));
+    if (remaining <= 0) {
+      newState = addLog(
+        newState,
+        updated.id,
+        `${updated.name} 职业转型完成，月薪 ${targetSalary} 元`,
+        'income'
+      );
+    }
+  }
+
+  const afterCareer = newState.players[playerIndex];
+
+  // 失业倒计时
+  if (afterCareer.isUnemployed && (afterCareer.unemploymentTurnsRemaining ?? 0) > 0) {
+    const remaining = (afterCareer.unemploymentTurnsRemaining ?? 1) - 1;
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      unemploymentTurnsRemaining: remaining,
+      marriageHappiness: p.marriageStatus === 'married' ? Math.max(0, p.marriageHappiness - 3) : p.marriageHappiness,
+    }));
+    if (remaining <= 0) {
+      const base = updated.baseSalary ?? updated.salary;
+      const reduced = Math.round(base * (0.85 + Math.random() * 0.1));
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        isUnemployed: false,
+        unemploymentTurnsRemaining: 0,
+        salary: reduced,
+      }));
+      newState = addLog(
+        newState,
+        updated.id,
+        `${afterCareer.name} 失业期结束，再就业月薪 ${reduced} 元`,
+        'system'
+      );
+    }
+  }
+
+  const current = newState.players[playerIndex];
+
+  // 【新增】v3.2 临时支出倒计时
+  if ((current.tempExpenseTurnsRemaining ?? 0) > 0) {
+    const remaining = (current.tempExpenseTurnsRemaining ?? 1) - 1;
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      tempExpenseTurnsRemaining: remaining,
+      ...(remaining <= 0 ? { tempPerChildBoost: 0 } : {}),
+    }));
+  }
+
+  // 【新增】v3.2 配偶失业倒计时
+  if ((current.partnerUnemployedTurnsRemaining ?? 0) > 0) {
+    const remaining = (current.partnerUnemployedTurnsRemaining ?? 1) - 1;
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      partnerUnemployedTurnsRemaining: remaining,
+    }));
+    if (remaining <= 0) {
+      newState = addLog(
+        newState,
+        current.id,
+        `${current.name} 的伴侣重新找到工作`,
+        'system'
+      );
+    }
+  }
+
+  const afterTemp = newState.players[playerIndex];
+
+  // 婚恋幸福度与 DINK
+  if (afterTemp.marriageStatus === 'married') {
+    const salaryBonus = calcMarriageHappinessBySalary(afterTemp.salary);
+    const promoBoost = afterTemp.monthlyMarriageHappinessBoost ?? 0;
+    const delta = rollMarriageHappinessDelta() + salaryBonus + promoBoost;
+    newState = updatePlayer(newState, playerIndex, (p) => {
+      let happiness = Math.min(100, Math.max(0, p.marriageHappiness + delta));
+      let dinkTurns = p.dinkTurns ?? 0;
+      if (dinkTurns > 0) {
+        happiness = Math.max(0, happiness - 12);
+        dinkTurns += 1;
+      }
+      return { ...p, marriageHappiness: happiness, dinkTurns };
+    });
+
+    // 孕期处理
+    if (afterTemp.hasPregnancy) {
+      const months = (afterTemp.pregnancyMonths ?? 0) + 1;
+      if (Math.random() < 0.05) {
+        const cost = miscarriageCost(afterTemp.cityId);
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          hasPregnancy: false,
+          pregnancyMonths: 0,
+          cash: p.cash - cost,
+          expenses: {
+            ...p.expenses,
+            medicalPregnancy: 0,
+          },
+          marriageHappiness: Math.max(0, p.marriageHappiness - 15),
+        }));
+        newState = addLog(newState, afterTemp.id, `${afterTemp.name} 遭遇流产，支出 ${cost} 元`, 'expense');
+      } else if (months >= PREGNANCY_DURATION) {
+        if (afterTemp.children < CHILDREN_LIMIT) {
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            hasPregnancy: false,
+            pregnancyMonths: 0,
+            children: p.children + 1,
+            expenses: { ...p.expenses, medicalPregnancy: 0 },
+            marriageHappiness: Math.min(100, p.marriageHappiness + 10),
+          }));
+          newState = addLog(
+            newState,
+            afterTemp.id,
+            `${afterTemp.name} 顺利分娩，孩子 +1`,
+            'system'
+          );
+        } else {
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            hasPregnancy: false,
+            pregnancyMonths: 0,
+            expenses: { ...p.expenses, medicalPregnancy: 0 },
+          }));
+        }
+      } else {
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          pregnancyMonths: months,
+        }));
+      }
+    }
+
+    // 离婚判定
+    const afterLife = newState.players[playerIndex];
+    const divorceProb = getDivorceProbability(afterLife);
+    if (divorceProb > 0 && Math.random() < divorceProb) {
+      newState = executeDivorce(newState, playerIndex);
+    }
+  }
+
+  return checkAndHandleBankruptcy(newState);
+}
+
+function executeDivorce(state: GameState, playerIndex: number): GameState {
+  const player = state.players[playerIndex];
+  const settlement = divorceSettlement(player);
+  const legalFees = settlement.legalFees;
+  const cashToSpouse = settlement.cashToSpouse;
+  const discount = settlement.forcedAssetDiscount;
+  const divorceCount = (player.divorceCount ?? 0) + 1;
+  const newStatus = divorceCount >= 2 ? ('ineligible' as const) : ('divorced' as const);
+
+  let newState = updatePlayer(state, playerIndex, (p) => {
+    const sellable = p.assets.filter((a) => a.type === 'realEstate' || a.type === 'stock');
+    const toSell = sellable.slice(0, Math.ceil(sellable.length / 2));
+    let cash = p.cash - cashToSpouse - legalFees;
+    let assets = [...p.assets];
+
+    for (const asset of toSell) {
+      const mult = discount * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
+      let proceeds: number;
+      if (isStockLotAsset(asset)) {
+        proceeds = stockLotSellProceeds(asset, asset.shareHand ?? 0, mult, state.sectorMultiplier);
+      } else {
+        proceeds = calculateSellProceeds(asset, mult, state.sectorMultiplier);
+      }
+      cash += proceeds;
+      assets = assets.filter((a) => a.id !== asset.id);
+    }
+
+    return {
+      ...p,
+      cash: Math.max(0, cash),
+      assets,
+      marriageStatus: newStatus,
+      marriageHappiness: 0,
+      partnerSalary: 0,
+      divorceCount,
+      monthlyMarriageHappinessBoost: 0,
+      hasPregnancy: false,
+      pregnancyMonths: 0,
+      dinkTurns: 0,
+      expenses: {
+        ...p.expenses,
+        medicalPregnancy: 0,
+        other: Math.max(0, p.expenses.other - marriageOverhead(p.cityId)),
+      },
+    };
+  });
+
+  const statusNote =
+    newStatus === 'ineligible'
+      ? '，永久失去再婚资格'
+      : settlement.isPostRemarriage
+        ? '（再婚后再离，分割更严）'
+        : '';
+  newState = addLog(
+    newState,
+    player.id,
+    `${player.name} 离婚：分割现金 ${Math.round((settlement.isPostRemarriage ? 0.6 : 0.5) * 100)}%、折价出售部分资产、律师费 ${legalFees} 元${statusNote}`,
+    'expense'
+  );
+  return checkAndHandleBankruptcy(newState);
+}
 
 function updatePlayer(state: GameState, index: number, updater: (player: Player) => Player): GameState {
   const players = [...state.players];
@@ -78,6 +437,64 @@ function advanceTurn(state: GameState): GameState {
   return { ...state, currentPlayerIndex: nextIndex, round };
 }
 
+function finishEndTurn(state: GameState, playerIndex: number): GameState {
+  const player = state.players[playerIndex];
+
+  if (
+    !player.isBankrupt &&
+    checkFinancialFreedom(player, state.cashFlowMultiplier, state.sectorMultiplier) &&
+    !player.isInFastTrack
+  ) {
+    const newState = updatePlayer(state, playerIndex, (p) => ({
+      ...p,
+      isInFastTrack: true,
+      fastTrackPosition: 0,
+      cash: p.cash + getTotalAssetsValue(p, state.marketMultiplier, state.sectorMultiplier),
+      liabilities: [],
+      position: 0,
+    }));
+    const logState = addLog(newState, player.id, `${player.name} 实现财务自由，进入快车道！`, 'system');
+    return { ...advanceTurn(logState), phase: 'ROLLING' };
+  }
+
+  if (player.isInFastTrack && player.cash >= FAST_TRACK_WIN_AMOUNT) {
+    const winnerState = { ...state, winner: player, phase: 'GAME_OVER' as const };
+    return addLog(winnerState, player.id, `${player.name} 在快车道积累 ${FAST_TRACK_WIN_AMOUNT} 元，赢得游戏！`, 'win');
+  }
+
+  const nextState = advanceTurn(state);
+
+  if (state.testMode && state.testMaxRounds && nextState.round > state.testMaxRounds) {
+    return addLog(
+      { ...nextState, testStopped: true, phase: 'GAME_OVER' as const, winner: null },
+      player.id,
+      `【自动测试】已达 ${state.testMaxRounds} 回合上限，测试结束`,
+      'system'
+    );
+  }
+
+  let activeState = checkAndHandleBankruptcy(nextState);
+  if (activeState.phase === 'GAME_OVER') {
+    return activeState;
+  }
+
+  let safety = 0;
+  while (activeState.players[activeState.currentPlayerIndex].isBankrupt && safety < activeState.players.length) {
+    activeState = advanceTurn(activeState);
+    activeState = checkAndHandleBankruptcy(activeState);
+    if (activeState.phase === 'GAME_OVER') {
+      return activeState;
+    }
+    safety++;
+  }
+
+  const nextPlayer = activeState.players[activeState.currentPlayerIndex];
+  if (nextPlayer.isInFastTrack) {
+    return { ...activeState, phase: 'FAST_TRACK' };
+  }
+  return { ...activeState, phase: 'ROLLING' };
+}
+
 function checkAndHandleBankruptcy(state: GameState): GameState {
   const playerIndex = state.currentPlayerIndex;
   const player = state.players[playerIndex];
@@ -114,10 +531,59 @@ function checkAndHandleBankruptcy(state: GameState): GameState {
   return newState;
 }
 
+function handleSettlement(state: GameState, playerIndex: number, space: Space): GameState {
+  const player = state.players[playerIndex];
+  const propertyTax = getPropertyTax(player);
+  const isAnnual = space.name === '年度结算';
+  let taxAmount = propertyTax;
+
+  if (isAnnual && propertyTax > 0) {
+    taxAmount = propertyTax * 12;
+  }
+
+  let newState = state;
+  if (taxAmount > 0) {
+    newState = updatePlayer(newState, playerIndex, (p) => ({
+      ...p,
+      cash: p.cash - taxAmount,
+    }));
+    const label = isAnnual ? '年度房产持有税' : '房产持有税';
+    newState = addLog(newState, player.id, `${player.name} 缴纳${label} ${taxAmount} 元`, 'expense');
+  } else {
+    newState = addLog(
+      newState,
+      player.id,
+      `${player.name} 完成${space.name}（所得税已在月现金流中扣减）`,
+      'system'
+    );
+  }
+
+  newState = checkAndHandleBankruptcy(newState);
+  return { ...newState, phase: 'TURN_END', pendingSettlement: null };
+}
+
+function prepareSettlement(state: GameState, playerIndex: number, space: Space): GameState {
+  const player = state.players[playerIndex];
+  const propertyTax = getPropertyTax(player);
+  const isAnnual = space.name === '年度结算';
+  let taxAmount = propertyTax;
+
+  if (isAnnual && propertyTax > 0) {
+    taxAmount = propertyTax * 12;
+  }
+
+  return {
+    ...state,
+    phase: 'CARD_DECISION',
+    currentCard: null,
+    pendingSettlement: { amount: taxAmount, isAnnual },
+  };
+}
+
 function handlePayday(state: GameState, playerIndex: number): GameState {
   const player = state.players[playerIndex];
   const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-  const newState = updatePlayer(state, playerIndex, (p) => ({
+  let newState = updatePlayer(state, playerIndex, (p) => ({
     ...p,
     cash: p.cash + cashFlow,
     liabilities: p.liabilities.map((l) => ({
@@ -126,12 +592,14 @@ function handlePayday(state: GameState, playerIndex: number): GameState {
     })),
   }));
 
-  return addLog(
+  newState = addLog(
     newState,
     player.id,
     `${player.name} 发工资，现金流 ${cashFlow >= 0 ? '+' : ''}${cashFlow} 元`,
     'income'
   );
+
+  return processMonthlyLifeEvents(newState, playerIndex);
 }
 
 function drawCardAndUpdateState(
@@ -155,13 +623,26 @@ function executeBuyAsset(
   playerIndex: number,
   asset: Asset,
   isDiscounted: boolean,
-  dueDiligenceCost = 0
+  dueDiligenceCost = 0,
+  shareHand?: number
 ): GameState {
   const player = state.players[playerIndex];
   let newState = state;
 
-  const buyCost = calculateBuyCost(asset) + dueDiligenceCost;
-  const transactionFee = buyCost - asset.downPayment - dueDiligenceCost;
+  let finalAsset = asset;
+  if (isStockLotAsset(asset)) {
+    const lots = Math.max(1, Math.floor(shareHand ?? asset.shareHand ?? 1));
+    if (!Number.isInteger(lots) || lots < 1) {
+      return addLog(state, player.id, `${player.name} 股票须按整手买入（1手=100股）`, 'system');
+    }
+    finalAsset = buildStockLotAsset(asset, lots, state.round);
+  }
+
+  const buyCost = calculateBuyCost(finalAsset, isStockLotAsset(finalAsset) ? finalAsset.shareHand : undefined) + dueDiligenceCost;
+  const principalCost = isStockLotAsset(finalAsset)
+    ? (finalAsset.shareHand ?? 0) * 100 * (finalAsset.singlePrice ?? 0)
+    : finalAsset.downPayment;
+  const transactionFee = buyCost - principalCost - dueDiligenceCost;
   const shortfall = buyCost - player.cash;
 
   if (shortfall > 0) {
@@ -181,13 +662,13 @@ function executeBuyAsset(
         },
       ],
     }));
-    newState = addLog(newState, player.id, `${player.name} 为购买 ${asset.name} 贷款 ${shortfall} 元`, 'liability');
+    newState = addLog(newState, player.id, `${player.name} 为购买 ${finalAsset.name} 贷款 ${shortfall} 元`, 'liability');
   }
 
   newState = updatePlayer(newState, playerIndex, (p) => ({
     ...p,
     cash: p.cash - buyCost,
-    assets: [...p.assets, { ...asset, id: generateId() }],
+    assets: [...p.assets, { ...finalAsset, id: generateId() }],
   }));
 
   if (dueDiligenceCost > 0) {
@@ -197,10 +678,10 @@ function executeBuyAsset(
     newState = addLog(newState, player.id, `${player.name} 支付交易费 ${transactionFee} 元`, 'expense');
   }
 
-  if (asset.mortgage > 0) {
+  if (finalAsset.mortgage > 0) {
     const mortgageDebtType =
-      asset.type === 'realEstate'
-        ? getRealEstateMortgageDebtType(player, asset)
+      finalAsset.type === 'realEstate'
+        ? getRealEstateMortgageDebtType(player, finalAsset)
         : 'bankBusinessLoan';
 
     newState = updatePlayer(newState, playerIndex, (p) => ({
@@ -210,8 +691,8 @@ function executeBuyAsset(
         {
           id: generateId(),
           ...createLiability({
-            name: `${asset.name} 抵押贷款`,
-            principal: asset.mortgage,
+            name: `${finalAsset.name} 抵押贷款`,
+            principal: finalAsset.mortgage,
             debtType: mortgageDebtType,
             source: 'game',
           }),
@@ -220,10 +701,11 @@ function executeBuyAsset(
     }));
   }
 
+  const lotInfo = isStockLotAsset(finalAsset) ? `（${finalAsset.shareHand} 手）` : '';
   newState = addLog(
     newState,
     player.id,
-    `${player.name} ${isDiscounted ? '打折购买' : '购买'} ${asset.name}，总支出 ${buyCost} 元，月现金流 +${asset.cashFlow} 元`,
+    `${player.name} ${isDiscounted ? '打折购买' : '购买'} ${finalAsset.name}${lotInfo}，总支出 ${buyCost} 元，月现金流 +${finalAsset.cashFlow} 元`,
     'asset'
   );
   newState = checkAndHandleBankruptcy(newState);
@@ -379,11 +861,75 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
       }
       break;
     }
+    case 'unemployment': {
+      if (player.isRetired) {
+        newState = addLog(newState, player.id, `${player.name} 已退休，不受裁员影响`, 'system');
+        break;
+      }
+      if (!player.isUnemployed) {
+        const tier = getProfessionTier(player);
+        const ageMod = calcAgeUnemploymentRate(
+          player.age,
+          tier,
+          player.professionId,
+          player.retireStandardAge
+        );
+        const prob = Math.min(1, getUnemploymentProbability(tier) * ageMod);
+        if (Math.random() < prob) {
+          const turns = 3 + Math.floor(Math.random() * 4);
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            isUnemployed: true,
+            unemploymentTurnsRemaining: turns,
+            baseSalary: p.baseSalary ?? p.salary,
+            marriageHappiness:
+              p.marriageStatus === 'married' ? Math.max(0, p.marriageHappiness - 20) : p.marriageHappiness,
+          }));
+          newState = addLog(
+            newState,
+            player.id,
+            `【${card.title}】${player.name} 失业 ${turns} 回合，月薪归零`,
+            'market'
+          );
+        } else {
+          newState = addLog(
+            newState,
+            player.id,
+            `【${card.title}】${player.name} 险些失业，暂时保住工作`,
+            'market'
+          );
+        }
+      } else {
+        newState = addLog(newState, player.id, `${player.name} 已在失业中`, 'system');
+      }
+      break;
+    }
+    case 'reemployment': {
+      if (player.isUnemployed) {
+        const base = player.baseSalary ?? player.salary;
+        const restored = Math.round(base * (0.9 + Math.random() * 0.1));
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          isUnemployed: false,
+          unemploymentTurnsRemaining: 0,
+          salary: restored,
+        }));
+        newState = addLog(
+          newState,
+          player.id,
+          `【${card.title}】${player.name} 再就业，月薪 ${restored} 元`,
+          'market'
+        );
+      } else {
+        newState = addLog(newState, player.id, `${player.name} 目前在职，机会留给他人`, 'system');
+      }
+      break;
+    }
     default:
       break;
   }
 
-  return { ...newState, currentCard: null, phase: 'TURN_END' };
+  return checkAndHandleBankruptcy({ ...newState, currentCard: null, phase: 'TURN_END' });
 }
 
 function drawDiscountedOpportunity(state: GameState, playerIndex: number): GameState {
@@ -476,6 +1022,8 @@ function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?:
     creditCard: 0,
   };
 
+  const ageConfig = getProfessionAgeConfig(profession.id);
+
   return {
     id: generateId(),
     name,
@@ -506,6 +1054,33 @@ function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?:
     isAI,
     difficulty: isAI ? config.aiDifficulty : undefined,
     isBankrupt: false,
+    marriageStatus: 'single',
+    marriageHappiness: 0,
+    partnerSalary: 0,
+    hasPregnancy: false,
+    pregnancyMonths: 0,
+    dinkTurns: 0,
+    isUnemployed: false,
+    unemploymentTurnsRemaining: 0,
+    baseSalary: salary,
+    age: ageConfig.baseStartAge,
+    baseStartAge: ageConfig.baseStartAge,
+    retireStandardAge: ageConfig.retireStandardAge,
+    currentGameYear: 1,
+    isRetired: false,
+    pensionIncome: 0,
+    promotionLevel: 0,
+    promotionCount: 0,
+    marriageCount: 0,
+    divorceCount: 0,
+    layoffRiskModifier: 1,
+    layoffRiskBoostTurnsRemaining: 0,
+    salaryGapTurnsRemaining: 0,
+    careerTransitionTurnsRemaining: 0,
+    monthlyMarriageHappinessBoost: 0,
+    partnerUnemployedTurnsRemaining: 0,
+    tempPerChildBoost: 0,
+    tempExpenseTurnsRemaining: 0,
   };
 }
 
@@ -530,16 +1105,30 @@ function getInitialState(): GameState {
     winner: null,
     logs: [],
     pendingDice: null,
+    pendingLifeEvent: null,
+    promotionOffer: null,
+    careerEvent: null,
+    pendingPaydayAmount: null,
+    pendingSettlement: null,
   };
 }
 
-export function gameReducer(state: GameState, action: GameAction): GameState {
+function gameReducerSwitch(state: GameState, action: GameAction): GameState {
   const playerIndex = state.currentPlayerIndex;
   const player = state.players[playerIndex];
 
   switch (action.type) {
     case 'SETUP_GAME': {
-      const { humanPlayerName, humanProfessionId, customProfession, cityId, aiCount, aiDifficulty } = action.payload;
+      const {
+        humanPlayerName,
+        humanProfessionId,
+        customProfession,
+        cityId,
+        aiCount,
+        aiDifficulty,
+        testMode,
+        testMaxRounds,
+      } = action.payload;
       const config: GameConfig = {
         humanPlayerName,
         humanProfessionId,
@@ -547,7 +1136,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         cityId: cityId ?? DEFAULT_CITY_ID,
         aiCount,
         aiDifficulty,
+        testMode,
+        testMaxRounds,
       };
+      const isTestMode = config.testMode ?? false;
+      const maxRounds = config.testMaxRounds ?? 50;
       const newState: GameState = {
         ...getInitialState(),
         players: [
@@ -557,8 +1150,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           ),
         ],
         phase: 'ROLLING',
+        testMode: isTestMode,
+        testMaxRounds: maxRounds,
+        testTimeoutRecord: isTestMode ? {} : undefined,
+        bugLogs: isTestMode ? [] : undefined,
+        testStopped: false,
       };
-      return addLog(newState, newState.players[0].id, '游戏开始！', 'system');
+      const started = addLog(newState, newState.players[0].id, '游戏开始！', 'system');
+      return isTestMode
+        ? addLog(started, newState.players[0].id, `【自动测试】最多 ${maxRounds} 回合`, 'system')
+        : started;
     }
 
     case 'RESTART_GAME': {
@@ -578,28 +1179,38 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const steps = state.pendingDice ?? 1;
       const currentPos = player.position;
       const newPos = (currentPos + steps) % state.spaces.length;
+      const crossedLap = newPos < currentPos;
+      const isPaydaySpace = state.spaces[newPos].type === 'payday';
 
       let newState = updatePlayer(state, playerIndex, (p) => ({
         ...p,
         position: newPos,
         charityTurns: Math.max(0, p.charityTurns - 1),
       }));
-      newState = { ...newState, pendingDice: null };
+      newState = { ...newState, pendingDice: null, currentCard: null, promotionOffer: null, careerEvent: null, pendingPaydayAmount: null, pendingSettlement: null };
 
-      // 经过发工资日（起点）时发工资
-      if (newPos < currentPos) {
-        newState = handlePayday(newState, playerIndex);
+      if (crossedLap) {
+        newState = incrementAgeOnLap(newState, playerIndex);
       }
 
-      // 落点也是 payday 时发工资
-      if (state.spaces[newPos].type === 'payday') {
+      const shouldTriggerPayday = crossedLap || isPaydaySpace;
+      const deferPaydayForModal = isPaydaySpace && newState.pendingLifeEvent !== 'retirement';
+
+      if (shouldTriggerPayday && !deferPaydayForModal) {
         newState = handlePayday(newState, playerIndex);
       }
 
       newState = addLog(newState, player.id, `${player.name} 移动到 ${state.spaces[newPos].name}`, 'move');
 
-      // 自动触发格子事件
+      if (newState.pendingLifeEvent === 'retirement') {
+        if (shouldTriggerPayday && deferPaydayForModal) {
+          newState = handlePayday(newState, playerIndex);
+        }
+        return { ...newState, phase: 'CARD_DECISION', currentCard: null };
+      }
+
       const space = state.spaces[newPos];
+      const currentPlayer = newState.players[playerIndex];
       switch (space.type) {
         case 'opportunity':
         case 'market':
@@ -622,25 +1233,73 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           return { ...newState, phase: 'CARD_DECISION' };
         }
         case 'baby': {
-          if (player.children >= CHILDREN_LIMIT) {
-            newState = addLog(newState, player.id, `${player.name} 已经有 ${CHILDREN_LIMIT} 个孩子了`, 'system');
+          if (currentPlayer.marriageStatus !== 'married') {
+            newState = addLog(newState, currentPlayer.id, `${currentPlayer.name} 尚未结婚，生育格子跳过`, 'system');
+            return { ...newState, phase: 'TURN_END', currentCard: null };
+          }
+          if (currentPlayer.children >= CHILDREN_LIMIT && !currentPlayer.hasPregnancy) {
+            newState = addLog(
+              newState,
+              currentPlayer.id,
+              `${currentPlayer.name} 已经有 ${CHILDREN_LIMIT} 个孩子了`,
+              'system'
+            );
+            return { ...newState, phase: 'TURN_END', currentCard: null };
+          }
+          return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null };
+        }
+        case 'marriage': {
+          if (currentPlayer.marriageStatus === 'ineligible') {
+            newState = addLog(newState, currentPlayer.id, `${currentPlayer.name} 已永久失去再婚资格`, 'system');
+            return { ...newState, phase: 'TURN_END', currentCard: null };
+          }
+          if (currentPlayer.marriageStatus === 'divorced') {
+            return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null, careerEvent: null };
+          }
+          if (currentPlayer.marriageStatus === 'married') {
+            return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null, careerEvent: null };
+          }
+          return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null, careerEvent: null };
+        }
+        case 'promotion': {
+          const promoPlayer = newState.players[playerIndex];
+          if (!canReceivePromotion(promoPlayer)) {
+            const reason = promoPlayer.isRetired ? '已退休' : '自由职业无法触发职业事件';
+            newState = addLog(newState, player.id, `${player.name} ${reason}，跳过职业格`, 'system');
             return { ...newState, phase: 'TURN_END' };
           }
-          return { ...newState, phase: 'CARD_DECISION', currentCard: null };
+          const careerEvent = rollCareerEvent(promoPlayer, newState);
+          if (!careerEvent) {
+            newState = addLog(newState, player.id, `${player.name} 本回合无职业事件`, 'system');
+            return { ...newState, phase: 'TURN_END' };
+          }
+          return {
+            ...newState,
+            phase: 'CARD_DECISION',
+            currentCard: null,
+            careerEvent,
+            promotionOffer: careerEventToLegacyOffer(careerEvent),
+          };
         }
         case 'settlement': {
-          const tax = player.expenses.tax;
-          newState = updatePlayer(newState, playerIndex, (p) => ({
-            ...p,
-            cash: p.cash - tax,
-          }));
-          newState = addLog(newState, player.id, `${player.name} 缴纳税款 ${tax} 元`, 'expense');
-          newState = checkAndHandleBankruptcy(newState);
+          return prepareSettlement(newState, playerIndex, space);
+        }
+        case 'payday': {
+          if (deferPaydayForModal) {
+            const cashFlow = getMonthlyCashFlow(
+              currentPlayer,
+              newState.cashFlowMultiplier,
+              newState.sectorMultiplier
+            );
+            return {
+              ...newState,
+              phase: 'CARD_DECISION',
+              currentCard: null,
+              pendingPaydayAmount: cashFlow,
+            };
+          }
           return { ...newState, phase: 'TURN_END' };
         }
-        case 'payday':
-        default:
-          return { ...newState, phase: 'TURN_END' };
       }
     }
 
@@ -662,7 +1321,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!gate.allowed) {
         return addLog(state, player.id, `无法购买：${gate.reason}`, 'system');
       }
-      return executeBuyAsset(state, playerIndex, getOpportunityAsset(card, player), false, card.dueDiligenceCost ?? 0);
+      return executeBuyAsset(
+        state,
+        playerIndex,
+        getOpportunityAsset(card, player),
+        false,
+        card.dueDiligenceCost ?? 0,
+        action.payload?.shareHand
+      );
     }
 
     case 'BUY_DISCOUNTED_ASSET': {
@@ -672,7 +1338,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!gate.allowed) {
         return addLog(state, player.id, `无法购买：${gate.reason}`, 'system');
       }
-      return executeBuyAsset(state, playerIndex, getOpportunityAsset(card, player), true, card.dueDiligenceCost ?? 0);
+      return executeBuyAsset(
+        state,
+        playerIndex,
+        getOpportunityAsset(card, player),
+        true,
+        card.dueDiligenceCost ?? 0,
+        action.payload?.shareHand
+      );
     }
 
     case 'DECLINE_CARD': {
@@ -707,17 +1380,41 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         newState = addLog(newState, player.id, `${player.name} 为支付 ${card.title} 贷款 ${shortfall} 元`, 'liability');
       }
 
-      newState = updatePlayer(newState, playerIndex, (p) => ({
-        ...p,
-        cash: p.cash - cost,
-      }));
+      newState = updatePlayer(newState, playerIndex, (p) => {
+        let next: Player = { ...p, cash: p.cash - cost };
 
-      if (card.isRecurring && card.monthlyCost) {
-        newState = updatePlayer(newState, playerIndex, (p) => ({
-          ...p,
-          expenses: { ...p.expenses, other: p.expenses.other + card.monthlyCost! },
-        }));
-      }
+        if (card.isRecurring && card.monthlyCost) {
+          next = {
+            ...next,
+            expenses: { ...next.expenses, other: next.expenses.other + card.monthlyCost! },
+          };
+        }
+
+        if (card.happinessDelta && next.marriageStatus === 'married') {
+          next = {
+            ...next,
+            marriageHappiness: Math.min(100, Math.max(0, next.marriageHappiness + card.happinessDelta!)),
+          };
+        }
+
+        if (card.partnerUnemploymentTurns && next.marriageStatus === 'married') {
+          const turns = 2 + Math.floor(Math.random() * 4);
+          next = {
+            ...next,
+            partnerUnemployedTurnsRemaining: turns,
+          };
+        }
+
+        if (card.tempPerChildBoost && card.tempExpenseTurns) {
+          next = {
+            ...next,
+            tempPerChildBoost: card.tempPerChildBoost,
+            tempExpenseTurnsRemaining: card.tempExpenseTurns,
+          };
+        }
+
+        return next;
+      });
 
       newState = addLog(newState, player.id, `${player.name} 支付额外支出 ${card.title} ${cost} 元`, 'expense');
       newState = checkAndHandleBankruptcy(newState);
@@ -755,6 +1452,168 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...newState, phase: 'TURN_END', currentCard: null };
     }
 
+    case 'CHOOSE_MARRIAGE': {
+      const isRemarriage = player.marriageStatus === 'divorced';
+      if (player.marriageStatus !== 'single' && !isRemarriage) {
+        return addLog(state, player.id, `${player.name} 无法重复结婚`, 'system');
+      }
+      if (!action.payload.marry) {
+        const skipState = addLog(
+          state,
+          player.id,
+          `${player.name} 选择${isRemarriage ? '暂不' : '保持'}${isRemarriage ? '再婚' : '单身'}`,
+          'system'
+        );
+        return { ...skipState, phase: 'TURN_END', currentCard: null };
+      }
+      const cost = isRemarriage ? remarriageCost(player.cityId) : weddingCost(player.cityId);
+      const partner = calcPartnerSalary(player.salary, player.cityId);
+      const overhead = marriageOverhead(player.cityId);
+      const happiness = isRemarriage ? 50 : 60;
+      let newState = state;
+      const shortfall = Math.max(0, cost - player.cash);
+      if (shortfall > 0) {
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          cash: p.cash + shortfall,
+          liabilities: [
+            ...p.liabilities,
+            {
+              id: generateId(),
+              ...createLiability({
+                name: isRemarriage ? '再婚消费贷' : '婚礼消费贷',
+                principal: shortfall,
+                debtType: 'consumerLoan',
+                source: 'game',
+              }),
+            },
+          ],
+        }));
+      }
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        cash: p.cash - cost,
+        marriageStatus: 'married',
+        marriageHappiness: happiness,
+        partnerSalary: partner,
+        marriageCount: (p.marriageCount ?? 0) + 1,
+        expenses: { ...p.expenses, other: p.expenses.other + overhead },
+      }));
+      newState = addLog(
+        newState,
+        player.id,
+        `${player.name} ${isRemarriage ? '再婚' : '结婚'}！仪式 ${cost} 元，幸福度 ${happiness}，伴侣月薪 +${partner}，家庭开销 +${overhead}/月`,
+        'expense'
+      );
+      newState = checkAndHandleBankruptcy(newState);
+      return { ...newState, phase: 'TURN_END', currentCard: null };
+    }
+
+    case 'RESOLVE_MARRIAGE_GRID': {
+      if (player.marriageStatus !== 'married') {
+        return { ...state, phase: 'TURN_END', currentCard: null };
+      }
+      let newState = state;
+      const h = player.marriageHappiness;
+      if (h >= 70) {
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          marriageHappiness: Math.min(100, p.marriageHappiness + 5),
+        }));
+        newState = addLog(newState, player.id, `${player.name} 婚姻甜蜜，幸福度 +5`, 'system');
+      } else if (h >= 40) {
+        newState = addLog(
+          newState,
+          player.id,
+          `${player.name} 婚姻平淡，幸福度 ${h}，继续经营`,
+          'system'
+        );
+      } else {
+        const counseling = action.payload.counseling === true;
+        if (counseling) {
+          const cost = Math.round(player.salary * 0.5);
+          const shortfall = Math.max(0, cost - player.cash);
+          if (shortfall > 0) {
+            newState = updatePlayer(newState, playerIndex, (p) => ({
+              ...p,
+              cash: p.cash + shortfall,
+              liabilities: [
+                ...p.liabilities,
+                {
+                  id: generateId(),
+                  ...createLiability({
+                    name: '婚姻咨询费',
+                    principal: shortfall,
+                    debtType: 'consumerLoan',
+                    source: 'game',
+                  }),
+                },
+              ],
+            }));
+          }
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            cash: p.cash - cost,
+            marriageHappiness: Math.min(100, p.marriageHappiness + 15),
+          }));
+          newState = addLog(newState, player.id, `${player.name} 投资婚姻咨询 ${cost} 元，幸福度 +15`, 'expense');
+        } else {
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            marriageHappiness: Math.max(0, p.marriageHappiness - 5),
+          }));
+          newState = addLog(newState, player.id, `${player.name} 忽视婚姻危机，幸福度 -5`, 'system');
+          if (Math.random() < 0.15) {
+            newState = executeDivorce(newState, playerIndex);
+          }
+        }
+      }
+      newState = checkAndHandleBankruptcy(newState);
+      return { ...newState, phase: 'TURN_END', currentCard: null };
+    }
+
+    case 'CHOOSE_PREGNANCY_PATH': {
+      const path: PregnancyPath = action.payload.path;
+      let newState = state;
+
+      if (path === 'plan') {
+        const medical = pregnancyMedicalCost(player.cityId);
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          hasPregnancy: true,
+          pregnancyMonths: 0,
+          dinkTurns: 0,
+          expenses: { ...p.expenses, medicalPregnancy: medical },
+        }));
+        newState = addLog(
+          newState,
+          player.id,
+          `${player.name} 计划怀孕，月医疗支出 +${medical} 元`,
+          'expense'
+        );
+      } else if (path === 'dink') {
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          hasPregnancy: false,
+          pregnancyMonths: 0,
+          dinkTurns: 1,
+          expenses: { ...p.expenses, medicalPregnancy: 0 },
+          marriageHappiness: Math.max(0, p.marriageHappiness - 12),
+        }));
+        newState = addLog(
+          newState,
+          player.id,
+          `${player.name} 选择 DINK，幸福度 -12，离婚风险上升`,
+          'system'
+        );
+      } else {
+        newState = addLog(newState, player.id, `${player.name} 选择推迟生育`, 'system');
+      }
+
+      newState = checkAndHandleBankruptcy(newState);
+      return { ...newState, phase: 'TURN_END', currentCard: null };
+    }
+
     case 'DONATE_CHARITY': {
       if (!action.payload.donate) {
         return { ...state, phase: 'TURN_END' };
@@ -767,6 +1626,247 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       }));
       newState = addLog(newState, player.id, `${player.name} 捐款 ${donation} 元，未来 ${CHARITY_TURNS} 回合可掷双骰子`, 'expense');
       newState = checkAndHandleBankruptcy(newState);
+      return { ...newState, phase: 'TURN_END' };
+    }
+
+    case 'CONFIRM_RETIREMENT': {
+      let newState = executeRetirement(state, playerIndex);
+      return {
+        ...newState,
+        pendingLifeEvent: null,
+        phase: 'TURN_END',
+        currentCard: null,
+      };
+    }
+
+    case 'CONFIRM_PAYDAY': {
+      let newState = state;
+      if (state.pendingPaydayAmount != null) {
+        newState = handlePayday(newState, playerIndex);
+      }
+      newState = checkAndHandleBankruptcy(newState);
+      return {
+        ...newState,
+        phase: 'TURN_END',
+        currentCard: null,
+        pendingPaydayAmount: null,
+      };
+    }
+
+    case 'CONFIRM_SETTLEMENT': {
+      const space = state.spaces[player.position];
+      if (space.type !== 'settlement' || !state.pendingSettlement) {
+        return { ...state, phase: 'TURN_END', pendingSettlement: null };
+      }
+      return handleSettlement(state, playerIndex, space);
+    }
+
+    case 'CHOOSE_PROMOTION': {
+      const event = state.careerEvent;
+      if (!event) {
+        return { ...state, phase: 'TURN_END', promotionOffer: null, careerEvent: null };
+      }
+
+      const clearCareer = { phase: 'TURN_END' as const, promotionOffer: null, careerEvent: null, currentCard: null };
+
+      if (!action.payload.accept && event.type !== 'layoff') {
+        const skipState = addLog(state, player.id, `${player.name} 放弃：${event.title}`, 'system');
+        return { ...skipState, ...clearCareer };
+      }
+
+      let newState = state;
+
+      const payCareerCost = (cost: number, loanName: string) => {
+        const shortfall = Math.max(0, cost - newState.players[playerIndex].cash);
+        if (shortfall > 0) {
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            cash: p.cash + shortfall,
+            liabilities: [
+              ...p.liabilities,
+              {
+                id: generateId(),
+                ...createLiability({
+                  name: loanName,
+                  principal: shortfall,
+                  debtType: 'consumerLoan',
+                  source: 'game',
+                }),
+              },
+            ],
+          }));
+        }
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          cash: p.cash - cost,
+        }));
+      };
+
+      switch (event.type) {
+        case 'promotion': {
+          const boostPct = event.salaryBoostPct ?? 0.2;
+          const cost = event.cost ?? 0;
+          const monthlyBoost = event.monthlyHappinessBoost ?? 3;
+          payCareerCost(cost, '升迁培训/社交费');
+          newState = updatePlayer(newState, playerIndex, (p) => {
+            const newSalary = Math.round(p.salary * (1 + boostPct));
+            const happinessBoost = calcMarriageHappinessBySalary(newSalary);
+            const promoCount = (p.promotionCount ?? p.promotionLevel ?? 0) + 1;
+            return {
+              ...p,
+              salary: newSalary,
+              baseSalary: newSalary,
+              promotionLevel: promoCount,
+              promotionCount: promoCount,
+              layoffRiskModifier: Math.max(0.05, (p.layoffRiskModifier ?? 1) * 0.8),
+              monthlyMarriageHappinessBoost: monthlyBoost,
+              marriageHappiness:
+                p.marriageStatus === 'married'
+                  ? Math.min(100, p.marriageHappiness + happinessBoost)
+                  : p.marriageHappiness,
+            };
+          });
+          newState = addLog(
+            newState,
+            player.id,
+            `${player.name} 内部晋升！月薪 +${Math.round(boostPct * 100)}%，培训费 ${cost} 元，裁员风险 -20%`,
+            'income'
+          );
+          break;
+        }
+        case 'jobHop': {
+          const choice = action.payload.jobHopChoice ?? 'highPay';
+          if (choice === 'highPay') {
+            const boostPct = event.highPayBoostPct ?? 0.4;
+            const gapTurns = event.highPayGapTurns ?? 2;
+            const riskTurns = event.highPayLayoffRiskTurns ?? 3;
+            newState = updatePlayer(newState, playerIndex, (p) => {
+              const newSalary = Math.round(p.salary * (1 + boostPct));
+              return {
+                ...p,
+                salary: newSalary,
+                baseSalary: newSalary,
+                salaryGapTurnsRemaining: gapTurns,
+                layoffRiskBoostTurnsRemaining: riskTurns,
+                layoffRiskModifier: (p.layoffRiskModifier ?? 1) * 1.5,
+              };
+            });
+            newState = addLog(
+              newState,
+              player.id,
+              `${player.name} 高薪跳槽！月薪 +${Math.round(boostPct * 100)}%，${gapTurns} 回合空窗期`,
+              'income'
+            );
+          } else {
+            const cutPct = event.stableSalaryCutPct ?? 0.15;
+            newState = updatePlayer(newState, playerIndex, (p) => {
+              const newSalary = Math.round(p.salary * (1 - cutPct));
+              return {
+                ...p,
+                salary: newSalary,
+                baseSalary: newSalary,
+                layoffRiskModifier: 0.05,
+              };
+            });
+            newState = addLog(
+              newState,
+              player.id,
+              `${player.name} 选择稳定岗位，月薪 -${Math.round(cutPct * 100)}%，裁员风险极低`,
+              'system'
+            );
+          }
+          break;
+        }
+        case 'layoff': {
+          const severanceMonths = event.severanceMonths ?? 4;
+          const turns = event.unemploymentTurns ?? 4;
+          const happinessDelta = event.happinessDelta ?? -25;
+          const severance = Math.round(player.salary * severanceMonths);
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            isUnemployed: true,
+            unemploymentTurnsRemaining: turns,
+            baseSalary: p.baseSalary ?? p.salary,
+            cash: p.cash + severance,
+            marriageHappiness:
+              p.marriageStatus === 'married'
+                ? Math.max(0, p.marriageHappiness + happinessDelta)
+                : p.marriageHappiness,
+          }));
+          newState = addLog(
+            newState,
+            player.id,
+            `${player.name} 被裁员！N+1 补偿 ${severance} 元，失业 ${turns} 回合`,
+            'expense'
+          );
+          if (player.marriageStatus === 'married' && Math.random() < 0.25) {
+            newState = executeDivorce(newState, playerIndex);
+          }
+          break;
+        }
+        case 'careerChange': {
+          const ratio = event.transitionSalaryRatio ?? 0.5;
+          const recoveryTurns = event.recoveryTurns ?? 5;
+          const targetBoost = event.targetSalaryBoostPct ?? 0.15;
+          const failureCost = event.failureCost ?? Math.round(player.salary * 0.5);
+          const base = player.baseSalary ?? player.salary;
+          if (Math.random() < 0.2) {
+            payCareerCost(failureCost, '转型失败损失');
+            newState = addLog(newState, player.id, `${player.name} 职业转型失败，额外损失 ${failureCost} 元`, 'expense');
+          } else {
+            newState = updatePlayer(newState, playerIndex, (p) => ({
+              ...p,
+              salary: Math.round(base * ratio),
+              careerTransitionTurnsRemaining: recoveryTurns,
+              careerTransitionBaseSalary: base,
+              careerTransitionTargetBoostPct: targetBoost,
+              layoffRiskModifier: (p.layoffRiskModifier ?? 1) * 1.2,
+            }));
+            newState = addLog(
+              newState,
+              player.id,
+              `${player.name} 开始职业转型，月薪暂降至 ${Math.round(ratio * 100)}%，${recoveryTurns} 回合内恢复`,
+              'system'
+            );
+          }
+          break;
+        }
+        case 'reemployment': {
+          const restoredPct = event.restoredSalaryPct ?? 0.9;
+          const baseSalary = player.baseSalary ?? player.salary;
+          const restored = Math.round(baseSalary * restoredPct);
+          newState = updatePlayer(newState, playerIndex, (p) => ({
+            ...p,
+            isUnemployed: false,
+            unemploymentTurnsRemaining: 0,
+            salary: restored,
+            baseSalary: restored,
+          }));
+          newState = addLog(
+            newState,
+            player.id,
+            `${player.name} 提前再就业！月薪 ${restored} 元`,
+            'income'
+          );
+          break;
+        }
+      }
+
+      newState = checkAndHandleBankruptcy(newState);
+      return { ...newState, ...clearCareer };
+    }
+
+    case 'MANUAL_RETIRE': {
+      if (!isSelfEmployedProfession(player.professionId)) {
+        return addLog(state, player.id, `${player.name} 非自由职业，无法主动退休`, 'system');
+      }
+      if (player.age < 50) {
+        return addLog(state, player.id, `${player.name} 未满 50 岁，无法主动退休`, 'system');
+      }
+      if (player.isRetired) {
+        return addLog(state, player.id, `${player.name} 已经退休`, 'system');
+      }
+      let newState = executeRetirement(state, playerIndex);
       return { ...newState, phase: 'TURN_END' };
     }
 
@@ -851,11 +1951,60 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'SELL_ASSET': {
-      const { assetId, multiplier } = action.payload;
+      const { assetId, multiplier, shareHand: sellLots } = action.payload;
       const asset = player.assets.find((a) => a.id === assetId);
       if (!asset) return state;
 
       const effectiveMult = multiplier * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
+
+      if (isStockLotAsset(asset)) {
+        const totalLots = asset.shareHand ?? 0;
+        const lotsToSell =
+          sellLots !== undefined
+            ? sellLots
+            : totalLots < 1
+              ? totalLots
+              : totalLots;
+        if (totalLots >= 1 && sellLots !== undefined && (!Number.isInteger(sellLots) || sellLots < 1)) {
+          return addLog(state, player.id, '整手持仓须按整手卖出', 'system');
+        }
+        if (lotsToSell <= 0 || lotsToSell > totalLots) {
+          return addLog(state, player.id, '卖出手数无效', 'system');
+        }
+        const sellPrice = stockLotSellProceeds(asset, lotsToSell, effectiveMult, state.sectorMultiplier);
+        const remainingLots = totalLots - lotsToSell;
+
+        let newState = updatePlayer(state, playerIndex, (p) => {
+          if (remainingLots <= 0.001) {
+            return {
+              ...p,
+              cash: p.cash + sellPrice,
+              assets: p.assets.filter((a) => a.id !== assetId),
+            };
+          }
+          const remaining = buildStockLotAsset(
+            { ...asset, shareHand: remainingLots },
+            remainingLots,
+            asset.purchaseRound ?? state.round
+          );
+          remaining.id = asset.id;
+          remaining.heldMonths = asset.heldMonths;
+          remaining.purchaseRound = asset.purchaseRound;
+          return {
+            ...p,
+            cash: p.cash + sellPrice,
+            assets: p.assets.map((a) => (a.id === assetId ? remaining : a)),
+          };
+        });
+        newState = addLog(
+          newState,
+          player.id,
+          `${player.name} 卖出 ${asset.name} ${lotsToSell} 手，获得 ${sellPrice} 元`,
+          'asset'
+        );
+        return { ...newState, currentCard: null, phase: 'TURN_END' };
+      }
+
       const sellPrice = calculateSellProceeds(asset, effectiveMult, {});
       let newState = updatePlayer(state, playerIndex, (p) => ({
         ...p,
@@ -868,40 +2017,35 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'END_TURN': {
-      if (checkFinancialFreedom(player, state.cashFlowMultiplier, state.sectorMultiplier) && !player.isInFastTrack) {
-        const newState = updatePlayer(state, playerIndex, (p) => ({
-          ...p,
-          isInFastTrack: true,
-          fastTrackPosition: 0,
-          cash: p.cash + getTotalAssetsValue(p, state.marketMultiplier, state.sectorMultiplier),
-          // 保留资产但不保留原负债
-          liabilities: [],
-          position: 0,
-        }));
-        const logState = addLog(newState, player.id, `${player.name} 实现财务自由，进入快车道！`, 'system');
-        return { ...advanceTurn(logState), phase: 'ROLLING' };
+      if (player.isBankrupt) {
+        return finishEndTurn(state, playerIndex);
       }
 
-      if (player.isInFastTrack && player.cash >= FAST_TRACK_WIN_AMOUNT) {
-        const winnerState = { ...state, winner: player, phase: 'GAME_OVER' as const };
-        return addLog(winnerState, player.id, `${player.name} 在快车道积累 ${FAST_TRACK_WIN_AMOUNT} 元，赢得游戏！`, 'win');
+      const afterBankruptcy = checkAndHandleBankruptcy(state);
+      if (afterBankruptcy.phase === 'GAME_OVER') {
+        return afterBankruptcy;
       }
 
-      const nextState = advanceTurn(state);
-      const nextPlayer = nextState.players[nextState.currentPlayerIndex];
-      if (nextPlayer.isInFastTrack) {
-        return { ...nextState, phase: 'FAST_TRACK' };
-      }
-      return { ...nextState, phase: 'ROLLING' };
+      return finishEndTurn(afterBankruptcy, playerIndex);
     }
 
     case 'DECLARE_BANKRUPTCY': {
       return updatePlayer(state, playerIndex, (p) => ({ ...p, isBankrupt: true, cash: 0 }));
     }
 
+    case 'STOP_AUTO_TEST': {
+      if (!state.testMode) return state;
+      return { ...state, testStopped: true };
+    }
+
     default:
       return state;
   }
+}
+
+export function gameReducer(state: GameState, action: GameAction): GameState {
+  const nextState = gameReducerSwitch(state, action);
+  return runTestValidators(nextState, state, action);
 }
 
 export function getInitialGameState(): GameState {
