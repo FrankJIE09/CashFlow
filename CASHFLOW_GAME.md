@@ -1461,12 +1461,17 @@ CashFlow/
 
 | 项目 | 原因 |
 |------|------|
-| 浮动利率房贷 | 简化 EPI 模型，利率变化仅影响新贷 |
 | 部分还款缩期 | 保持 totalLoanMonth 不变，仅降月供 |
 | 城市专属机会卡池 | 当前统一卡池 + 城市缩放 |
 | 职业 × 城市禁配 | 暂不限制组合 |
 | 存档云同步 | 纯前端，无后端 |
 | 多语言 i18n | Phase 8 |
+
+### 12.4 §12 延后功能已完成（2026-07）
+
+- [x] **宏观降息重算月供** — `recalcAllPlayersMortgagesOnRateChange`；`interestRate` / `macroEvent.rateChange` 触发 EPI 重算（剩余期数 = totalLoanMonth − paidPeriods）
+- [x] **机会卡 28+** — `opportunityCards.ts` 现 34 张（小 25 + 大 9），覆盖股权/固收/商品/REITs/海外/实体/房产/车辆全品类
+- [x] **宏观市场卡 18+** — `marketCards.ts` 现 23 张（含 17 张 `macroEvent`），差异化 `assetImpacts` + 利率/交互型效果
 
 **在线可玩版本：** https://FrankJIE09.github.io/CashFlow/（v3.0）
 
@@ -1530,8 +1535,8 @@ CashFlow/
 
 | 卡组 | 数量 |
 |------|------|
-| 机会卡 | 28+（小 18 + 大 10） |
-| 市场卡 | 18（含 10+ macroEvent） |
+| 机会卡 | 34（小 25 + 大 9） |
+| 市场卡 | 23（含 17 macroEvent） |
 | 额外支出 | 8+ |
 
 ### 13.6 【调整】16 职业参数表（tier2 基准）

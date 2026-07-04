@@ -240,11 +240,129 @@ export const MARKET_CARDS: MarketCard[] = [
     },
   },
 
-  // ── 兼容旧卡 ──
+  {
+    id: 'fed_rate_hike',
+    title: '美联储加息周期',
+    description: '美联储持续加息，全球流动性收紧，海外资产与成长股承压。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'globalLiquidity',
+      rateChange: 0.01,
+      assetImpacts: {
+        overseas: { priceChange: 0.85, cashFlowChange: 0.95 },
+        stock: { priceChange: 0.92, cashFlowChange: 0.95 },
+        bond: { priceChange: 0.95 },
+        commodity: { priceChange: 0.9 },
+        reit: { priceChange: 0.92 },
+        科技: { priceChange: 0.8 },
+        贵金属: { priceChange: 0.95 },
+      },
+    },
+  },
+
+  // ── 地产政策 ──
+  {
+    id: 'property_easing',
+    title: '地产政策放松',
+    description: '限购松绑、首付下调，一二线楼市回暖，商铺租金回升。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'policyRegulation',
+      rateChange: -0.005,
+      assetImpacts: {
+        realEstate: { priceChange: 1.2, cashFlowChange: 1.08 },
+        reit: { priceChange: 1.1, cashFlowChange: 1.05 },
+        商业地产: { priceChange: 1.15, cashFlowChange: 1.1 },
+        物流地产: { priceChange: 1.08 },
+        entity: { priceChange: 1.05 },
+      },
+    },
+  },
+  {
+    id: 'property_tightening',
+    title: '地产政策收紧',
+    description: '三道红线与限购加码，开发商承压，房产估值回调。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'policyRegulation',
+      assetImpacts: {
+        realEstate: { priceChange: 0.82, cashFlowChange: 0.9 },
+        reit: { priceChange: 0.88, cashFlowChange: 0.92 },
+        商业地产: { priceChange: 0.85, cashFlowChange: 0.88 },
+        entity: { priceChange: 0.9, cashFlowChange: 0.92 },
+        business: { priceChange: 0.88 },
+      },
+    },
+  },
+
+  // ── 主题行情（续） ──
+  {
+    id: 'commodity_super_cycle',
+    title: '大宗商品超级周期',
+    description: '全球复苏拉动资源需求，有色、能源、农产品价格齐涨。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'economicCycle',
+      assetImpacts: {
+        commodity: { priceChange: 1.4 },
+        有色金属: { priceChange: 1.5 },
+        能源: { priceChange: 1.45 },
+        农产品: { priceChange: 1.3 },
+        贵金属: { priceChange: 1.2 },
+        stock: { priceChange: 1.05 },
+        bond: { priceChange: 0.95 },
+        科技: { priceChange: 0.9 },
+      },
+    },
+  },
+  {
+    id: 'offline_consumption_recovery',
+    title: '线下消费复苏',
+    description: '客流回暖，餐饮零售实体经营改善，商业地产租金回升。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'industryTrend',
+      assetImpacts: {
+        entity: { priceChange: 1.2, cashFlowChange: 1.25 },
+        餐饮: { priceChange: 1.3, cashFlowChange: 1.3 },
+        零售: { priceChange: 1.15, cashFlowChange: 1.2 },
+        商业地产: { priceChange: 1.12, cashFlowChange: 1.1 },
+        reit: { priceChange: 1.08, cashFlowChange: 1.05 },
+        消费: { priceChange: 1.15, cashFlowChange: 1.05 },
+      },
+    },
+  },
+  {
+    id: 'geopolitical_energy_crisis',
+    title: '地缘能源危机',
+    description: '地缘冲突推高油气价格，能源股与商品大涨，出行成本上升。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'globalLiquidity',
+      assetImpacts: {
+        commodity: { priceChange: 1.35 },
+        能源: { priceChange: 1.6, cashFlowChange: 1.2 },
+        贵金属: { priceChange: 1.25 },
+        stock: { priceChange: 0.92, cashFlowChange: 0.95 },
+        overseas: { priceChange: 0.9 },
+        entity: { priceChange: 0.95, cashFlowChange: 0.9 },
+        汽车: { priceChange: 0.88, cashFlowChange: 0.85 },
+        bond: { priceChange: 1.05 },
+      },
+    },
+  },
+
+  // ── 兼容旧卡（保留交互型效果） ──
   {
     id: 'market_rate_cut',
     title: '央行降息',
-    description: '贷款利率下调，月供压力减轻。',
+    description: '贷款利率下调，EPI 类负债月供重算，月供压力减轻。',
     type: 'market',
     effect: { type: 'interestRate', rateChange: -0.02 },
   },

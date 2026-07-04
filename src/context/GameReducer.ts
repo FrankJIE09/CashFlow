@@ -28,6 +28,7 @@ import {
   calcLiabilityMonthlyPayment,
   applyCityTierDownPayment,
   scaleAssetByPlayerCity,
+  recalcAllPlayersMortgagesOnRateChange,
 } from '../utils/financial';
 import { drawCard, generateId, shuffle } from '../utils/random';
 
@@ -229,44 +230,78 @@ function executeBuyAsset(
   return { ...newState, currentCard: null, phase: 'TURN_END' };
 }
 
-function applyAssetImpacts(state: GameState, playerId: string, cardTitle: string, effect: MarketEffect): GameState {
-  if (!effect.assetImpacts) return state;
+function applyInterestRateChange(
+  state: GameState,
+  playerId: string,
+  rateChange: number,
+  cardTitle?: string
+): GameState {
+  const oldRate = state.interestRate;
+  const newRate = Math.max(0.001, oldRate + rateChange);
+  const { players, changeLogs } = recalcAllPlayersMortgagesOnRateChange(state.players, newRate);
+  let newState: GameState = { ...state, interestRate: newRate, players };
 
-  let marketMultiplier = { ...state.marketMultiplier };
-  let cashFlowMultiplier = { ...state.cashFlowMultiplier };
-  let sectorMultiplier = { ...state.sectorMultiplier };
+  const prefix = cardTitle ? `【${cardTitle}】` : '';
+  newState = addLog(
+    newState,
+    playerId,
+    `${prefix}市场利率 ${(oldRate * 100).toFixed(1)}% → ${(newRate * 100).toFixed(1)}%，EPI 类负债月供已重算`,
+    'market'
+  );
+
+  for (const log of changeLogs) {
+    newState = addLog(newState, playerId, log, 'market');
+  }
+
+  return newState;
+}
+
+function applyAssetImpacts(state: GameState, playerId: string, cardTitle: string, effect: MarketEffect): GameState {
+  if (!effect.assetImpacts && !effect.rateChange) return state;
+
+  let newState = state;
   const impactLogs: string[] = [];
 
-  for (const [key, impact] of Object.entries(effect.assetImpacts)) {
-    if (impact.priceChange) {
-      if (isAssetTypeKey(key)) {
-        marketMultiplier[key] *= impact.priceChange;
-        impactLogs.push(`${getAssetTypeLabel(key)} 估值×${impact.priceChange}`);
-      } else {
-        sectorMultiplier[key] = (sectorMultiplier[key] ?? 1) * impact.priceChange;
-        impactLogs.push(`${key}板块 估值×${impact.priceChange}`);
-      }
-    }
-    if (impact.cashFlowChange) {
-      if (isAssetTypeKey(key)) {
-        cashFlowMultiplier[key] *= impact.cashFlowChange;
-        impactLogs.push(`${getAssetTypeLabel(key)} 现金流×${impact.cashFlowChange}`);
-      } else {
-        sectorMultiplier[key] = (sectorMultiplier[key] ?? 1) * impact.cashFlowChange;
-      }
-    }
-  }
+  if (effect.assetImpacts) {
+    let marketMultiplier = { ...state.marketMultiplier };
+    let cashFlowMultiplier = { ...state.cashFlowMultiplier };
+    let sectorMultiplier = { ...state.sectorMultiplier };
 
-  let newState: GameState = { ...state, marketMultiplier, cashFlowMultiplier, sectorMultiplier };
+    for (const [key, impact] of Object.entries(effect.assetImpacts)) {
+      if (impact.priceChange) {
+        if (isAssetTypeKey(key)) {
+          marketMultiplier[key] *= impact.priceChange;
+          impactLogs.push(`${getAssetTypeLabel(key)} 估值×${impact.priceChange}`);
+        } else {
+          sectorMultiplier[key] = (sectorMultiplier[key] ?? 1) * impact.priceChange;
+          impactLogs.push(`${key}板块 估值×${impact.priceChange}`);
+        }
+      }
+      if (impact.cashFlowChange) {
+        if (isAssetTypeKey(key)) {
+          cashFlowMultiplier[key] *= impact.cashFlowChange;
+          impactLogs.push(`${getAssetTypeLabel(key)} 现金流×${impact.cashFlowChange}`);
+        } else {
+          sectorMultiplier[key] = (sectorMultiplier[key] ?? 1) * impact.cashFlowChange;
+        }
+      }
+    }
+
+    newState = { ...newState, marketMultiplier, cashFlowMultiplier, sectorMultiplier };
+  }
 
   if (effect.rateChange) {
-    const newRate = Math.max(0.001, state.interestRate + effect.rateChange);
-    newState = { ...newState, interestRate: newRate };
-    impactLogs.push(`利率调整为 ${(newRate * 100).toFixed(1)}%`);
+    newState = applyInterestRateChange(newState, playerId, effect.rateChange);
   }
 
-  const summary = impactLogs.length > 0 ? impactLogs.slice(0, 4).join('；') : '市场格局发生变化';
-  return addLog(newState, playerId, `【${cardTitle}】${summary}`, 'market');
+  if (impactLogs.length > 0) {
+    const summary = impactLogs.slice(0, 4).join('；');
+    newState = addLog(newState, playerId, `【${cardTitle}】${summary}`, 'market');
+  } else if (effect.assetImpacts && !effect.rateChange) {
+    newState = addLog(newState, playerId, `【${cardTitle}】市场格局发生变化`, 'market');
+  }
+
+  return newState;
 }
 
 function applyMarketEffect(state: GameState, playerIndex: number): GameState {
@@ -317,9 +352,7 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
     }
     case 'interestRate': {
       if (effect.rateChange) {
-        const newRate = Math.max(0.001, state.interestRate + effect.rateChange);
-        newState = { ...newState, interestRate: newRate };
-        newState = addLog(newState, player.id, `市场利率调整为 ${(newRate * 100).toFixed(1)}%`, 'market');
+        newState = applyInterestRateChange(newState, player.id, effect.rateChange, card.title);
       }
       break;
     }

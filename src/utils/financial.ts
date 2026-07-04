@@ -90,6 +90,92 @@ export function calcEqualPrincipalInterestPayment(
   return Math.round(payment);
 }
 
+/** 开局基准市场利率（与 GameReducer 初始 interestRate 一致） */
+export const BASE_MARKET_INTEREST_RATE = 0.01;
+
+/** 宏观利率变动时需重算月供的 EPI 债务类型 */
+export const RATE_AFFECTED_DEBT_TYPES: DebtType[] = [
+  'houseFirst',
+  'houseSecond',
+  'shopMortgage',
+  'carLoan',
+  'consumerLoan',
+];
+
+/** 按市场利率偏移量计算某类债务的有效月利率 */
+export function getEffectiveMonthRate(debtType: DebtType, marketInterestRate: number): number {
+  const config = getDebtTypeConfig(debtType);
+  const delta = marketInterestRate - BASE_MARKET_INTEREST_RATE;
+  return Math.max(0.001, config.monthlyRate + delta);
+}
+
+/** 宏观降息/加息后，按剩余期数重算单笔 EPI 负债月供 */
+export function recalcLiabilityPaymentOnRateChange(
+  liability: Liability,
+  marketInterestRate: number
+): { liability: Liability; delta: number } {
+  const debtType = inferDebtTypeFromLiability(liability);
+  if (!RATE_AFFECTED_DEBT_TYPES.includes(debtType)) {
+    return { liability, delta: 0 };
+  }
+
+  const config = getDebtTypeConfig(debtType);
+  if (config.interestOnly) {
+    return { liability, delta: 0 };
+  }
+
+  const totalLoanMonth = liability.totalLoanMonth ?? config.totalLoanMonth ?? 360;
+  const paidPeriods = liability.paidPeriods ?? 0;
+  const remainingPeriods = Math.max(1, totalLoanMonth - paidPeriods);
+  const monthRate = getEffectiveMonthRate(debtType, marketInterestRate);
+  const oldPayment = liability.monthlyPayment;
+  const newPayment = calcEqualPrincipalInterestPayment(
+    liability.principal,
+    monthRate,
+    remainingPeriods
+  );
+
+  return {
+    liability: {
+      ...liability,
+      debtType,
+      monthlyPayment: newPayment,
+      interestRate: monthRate * 12,
+    },
+    delta: newPayment - oldPayment,
+  };
+}
+
+/** 宏观利率变动：重算所有玩家 EPI 类负债月供 */
+export function recalcAllPlayersMortgagesOnRateChange(
+  players: Player[],
+  marketInterestRate: number
+): { players: Player[]; changeLogs: string[] } {
+  const changeLogs: string[] = [];
+
+  const newPlayers = players.map((player) => {
+    let playerDelta = 0;
+    let affectedCount = 0;
+    const liabilities = player.liabilities.map((l) => {
+      const { liability, delta } = recalcLiabilityPaymentOnRateChange(l, marketInterestRate);
+      if (delta !== 0) affectedCount += 1;
+      playerDelta += delta;
+      return liability;
+    });
+
+    if (playerDelta !== 0) {
+      const direction = playerDelta < 0 ? '减少' : '增加';
+      changeLogs.push(
+        `${player.name} EPI 月供${direction} ${Math.abs(playerDelta)} 元（${affectedCount} 笔）`
+      );
+    }
+
+    return { ...player, liabilities };
+  });
+
+  return { players: newPlayers, changeLogs };
+}
+
 export function calcInterestOnlyPayment(principal: number, monthRate: number): number {
   return Math.round(principal * monthRate);
 }
