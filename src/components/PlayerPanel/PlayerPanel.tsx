@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../../context/GameContext';
-import { PROFESSIONS } from '../../data/professions';
+import { getPlayerProfessionName } from '../../data/professions';
+import { getCityById, CITY_TIER_LABELS } from '../../data/cities';
 import {
   getMonthlyCashFlow,
   getNetWorth,
   getPassiveIncome,
   getTotalExpenses,
   getCurrentDebt,
+  getCityExpenseMultiplier,
 } from '../../utils/financial';
+import { canPlayerRepay } from '../../utils/repayEligibility';
 import { formatCurrency } from '../../utils/format';
 import { FinancialStatement } from '../FinancialStatement/FinancialStatement';
 import { ProgressBar } from '../ProgressBar/ProgressBar';
@@ -42,12 +45,15 @@ export function PlayerPanel() {
 
   if (!selectedPlayer) return null;
 
-  const profession = PROFESSIONS.find((p) => p.id === selectedPlayer.professionId);
-  const monthlyCashFlow = getMonthlyCashFlow(selectedPlayer);
-  const netWorth = getNetWorth(selectedPlayer, state.marketMultiplier);
+  const professionName = getPlayerProfessionName(selectedPlayer);
+  const city = getCityById(selectedPlayer.cityId);
+  const expenseMult = getCityExpenseMultiplier(selectedPlayer.cityId);
+  const monthlyCashFlow = getMonthlyCashFlow(selectedPlayer, state.cashFlowMultiplier, state.sectorMultiplier);
+  const netWorth = getNetWorth(selectedPlayer, state.marketMultiplier, state.sectorMultiplier);
   const debt = getCurrentDebt(selectedPlayer);
   const maxReference = Math.max(Math.abs(monthlyCashFlow), 5000) * 1.5;
   const netWorthMax = Math.max(Math.abs(netWorth), 100000) * 1.2;
+  const canRepay = canPlayerRepay(state, selectedPlayer);
 
   return (
     <div className={`${styles.panel} cartoon-card`}>
@@ -75,13 +81,16 @@ export function PlayerPanel() {
           </div>
           <div className={styles.characterInfo}>
             <div className={styles.characterName}>{selectedPlayer.name}</div>
-            <div className={styles.profession}>{profession?.name}</div>
+            <div className={styles.profession}>{professionName}</div>
+            <div className={styles.cityLine}>
+              📍 {city.name} · {CITY_TIER_LABELS[city.tier]} · 生活×{expenseMult.toFixed(2)}
+            </div>
             <div className={styles.badges}>
               {selectedPlayer.isInFastTrack && (
                 <span className={`${styles.badge} ${styles.fastTrack}`}>{STATUS_ICONS.fastTrack} 快车道</span>
               )}
               {selectedPlayer.isBankrupt && (
-                <span className={`${styles.badge} ${styles.bankrupt}`}>{STATUS_ICONS.bankrupt} 破产</span>
+                <span className={`${styles.badge} ${styles.bankrupt}`}>{STATUS_ICONS.bankrupt} 现金流失败</span>
               )}
               {selectedPlayer.charityTurns > 0 && (
                 <span className={`${styles.badge} ${styles.charity}`}>{STATUS_ICONS.charity} 双骰子×{selectedPlayer.charityTurns}</span>
@@ -139,7 +148,9 @@ export function PlayerPanel() {
           <div className={styles.statItem}>
             <span className={styles.statIcon}>📈</span>
             <span className={styles.statLabel}>被动收入</span>
-            <span className={styles.statValue}>{formatCurrency(getPassiveIncome(selectedPlayer))}</span>
+            <span className={styles.statValue}>
+              {formatCurrency(getPassiveIncome(selectedPlayer, state.cashFlowMultiplier, state.sectorMultiplier))}
+            </span>
           </div>
           <div className={styles.statItem}>
             <span className={styles.statIcon}>💸</span>
@@ -159,7 +170,11 @@ export function PlayerPanel() {
       </div>
 
       {showStatement && (
-        <FinancialStatement player={selectedPlayer} onClose={() => setShowStatement(false)} />
+        <FinancialStatement
+          player={selectedPlayer}
+          onClose={() => setShowStatement(false)}
+          canRepay={canRepay}
+        />
       )}
     </div>
   );

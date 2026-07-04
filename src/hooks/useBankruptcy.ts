@@ -8,7 +8,7 @@ export function useBankruptcy() {
   if (!player) return { isBankrupt: false, canRecover: false };
 
   const isBankrupt = player.isBankrupt;
-  const canRecover = !checkBankruptcy(player) && player.cash < 0;
+  const canRecover = player.cash < 0 && !checkBankruptcy(player, state.cashFlowMultiplier, state.sectorMultiplier);
 
   return { isBankrupt, canRecover, player };
 }

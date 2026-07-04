@@ -4,9 +4,11 @@ import { useGame } from '../../context/GameContext';
 import { useGameActions } from '../../hooks/useGameActions';
 import { useSound } from '../../hooks/useSound';
 import { AnimatedDice } from '../AnimatedDice/AnimatedDice';
-import { getCurrentDebt, getMaxLoanAmount, getMonthlyCashFlow } from '../../utils/financial';
+import { getCurrentDebt, getMonthlyCashFlow } from '../../utils/financial';
+import { canPlayerRepay } from '../../utils/repayEligibility';
 import { formatCurrency } from '../../utils/format';
 import { STATUS_ICONS } from '../Icons/GameIcons';
+import { RepayModal } from '../RepayModal/RepayModal';
 import styles from './ActionBar.module.css';
 
 export function ActionBar() {
@@ -18,6 +20,7 @@ export function ActionBar() {
   const [isRolling, setIsRolling] = useState(false);
   const [diceValue, setDiceValue] = useState(1);
   const [feedbackIcon, setFeedbackIcon] = useState<string | null>(null);
+  const [showRepayModal, setShowRepayModal] = useState(false);
 
   useEffect(() => {
     if (state.phase === 'TURN_END' && player) {
@@ -33,7 +36,7 @@ export function ActionBar() {
   const isHumanTurn = !player.isAI && !player.isBankrupt;
   const canRoll = state.phase === 'ROLLING' || state.phase === 'FAST_TRACK';
   const canEndTurn = state.phase === 'TURN_END';
-  const maxLoan = Math.max(0, getMaxLoanAmount(player) - getCurrentDebt(player));
+  const canRepay = canPlayerRepay(state, player);
   const cashFlow = getMonthlyCashFlow(player);
 
   const handleRoll = () => {
@@ -101,13 +104,23 @@ export function ActionBar() {
             step={1000}
           />
           <button
-            className={`${styles.loanButton} cartoon-button`}
+            className={`${styles.financeButton} ${styles.financeButtonLoan} cartoon-button`}
             onClick={() => actions.takeLoan(loanAmount)}
-            disabled={loanAmount > maxLoan || loanAmount <= 0 || !isHumanTurn}
+            disabled={loanAmount <= 0 || !isHumanTurn}
           >
             🏦 贷款
           </button>
-          <span className={styles.loanInfo}>可贷上限：{formatCurrency(maxLoan)}</span>
+          <button
+            className={`${styles.financeButton} ${styles.financeButtonRepay} cartoon-button`}
+            onClick={() => setShowRepayModal(true)}
+            disabled={!canRepay}
+            title={canRepay ? '提前偿还负债本金' : '回合结束阶段且有可还负债时可用'}
+          >
+            💳 偿还本金
+          </button>
+          <span className={styles.loanInfo}>
+            贷款无上限 · 当前负债 {formatCurrency(getCurrentDebt(player))}
+          </span>
         </div>
       </div>
 
@@ -121,6 +134,10 @@ export function ActionBar() {
           <span>回合 {state.round}</span>
         </div>
       </div>
+
+      {showRepayModal && (
+        <RepayModal player={player} onClose={() => setShowRepayModal(false)} />
+      )}
 
       <AnimatePresence>
         {feedbackIcon && (

@@ -1,17 +1,33 @@
-import type { Asset, AssetType, Card, CardType, GameAction, GameConfig, GameState, OpportunityCard, Player } from '../types/game';
-import { PROFESSIONS, PLAYER_COLORS } from '../data/professions';
+import type { Asset, AssetType, Card, CardType, GameAction, GameConfig, GameState, MarketEffect, OpportunityCard, Player } from '../types/game';
+import { PROFESSIONS, PLAYER_COLORS, CUSTOM_PROFESSION_ID, buildCustomProfession } from '../data/professions';
+import { getCityById, DEFAULT_CITY_ID } from '../data/cities';
 import { SPACES } from '../data/boardLayout';
 import { OPPORTUNITY_CARDS } from '../data/opportunityCards';
 import { MARKET_CARDS } from '../data/marketCards';
 import { DOODAD_CARDS } from '../data/doodadCards';
 import {
+  calculateBuyCost,
+  calculateSellProceeds,
+  calcPrepaymentPenalty,
+  canPurchaseOpportunity,
   checkBankruptcy,
   checkFinancialFreedom,
-  getCurrentDebt,
-  getMaxLoanAmount,
+  createDefaultMultiplierRecord,
+  createLiability,
+  getAssetPriceMultiplier,
+  getAssetTypeLabel,
   getMonthlyCashFlow,
-  getSellPrice,
+  getOpportunityAsset,
+  getRealEstateMortgageDebtType,
   getTotalAssetsValue,
+  inferDebtTypeFromLiability,
+  inferProfessionDebtType,
+  isAssetTypeKey,
+  normalizeLiability,
+  syncExpenseOnRepay,
+  calcLiabilityMonthlyPayment,
+  applyCityTierDownPayment,
+  scaleAssetByPlayerCity,
 } from '../utils/financial';
 import { drawCard, generateId, shuffle } from '../utils/random';
 
@@ -62,26 +78,51 @@ function advanceTurn(state: GameState): GameState {
 }
 
 function checkAndHandleBankruptcy(state: GameState): GameState {
-  const player = state.players[state.currentPlayerIndex];
-  if (player.cash < 0) {
-    if (checkBankruptcy(player)) {
-      const newState = updatePlayer(state, state.currentPlayerIndex, (p) => ({
-        ...p,
-        isBankrupt: true,
-        cash: 0,
-      }));
-      return addLog(newState, player.id, `${player.name} 破产了！`, 'system');
-    }
+  const playerIndex = state.currentPlayerIndex;
+  const player = state.players[playerIndex];
+  if (!checkBankruptcy(player, state.cashFlowMultiplier, state.sectorMultiplier)) return state;
+
+  const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
+  let newState = updatePlayer(state, playerIndex, (p) => ({
+    ...p,
+    isBankrupt: true,
+    cash: 0,
+  }));
+  newState = addLog(
+    newState,
+    player.id,
+    `${player.name} 月现金流为负（${cashFlow} 元），游戏失败！`,
+    'system'
+  );
+
+  const activePlayers = newState.players.filter((p) => !p.isBankrupt);
+
+  if (!player.isAI) {
+    const aiWinner = activePlayers.find((p) => p.isAI) ?? null;
+    return { ...newState, winner: aiWinner, phase: 'GAME_OVER' };
   }
-  return state;
+
+  if (activePlayers.length === 1) {
+    return { ...newState, winner: activePlayers[0], phase: 'GAME_OVER' };
+  }
+
+  if (activePlayers.length === 0) {
+    return { ...newState, phase: 'GAME_OVER' };
+  }
+
+  return newState;
 }
 
 function handlePayday(state: GameState, playerIndex: number): GameState {
   const player = state.players[playerIndex];
-  const cashFlow = getMonthlyCashFlow(player);
+  const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
   const newState = updatePlayer(state, playerIndex, (p) => ({
     ...p,
     cash: p.cash + cashFlow,
+    liabilities: p.liabilities.map((l) => ({
+      ...l,
+      paidPeriods: (l.paidPeriods ?? 0) + 1,
+    })),
   }));
 
   return addLog(
@@ -108,16 +149,21 @@ function drawCardAndUpdateState(
   return { state: newState, card: result.card };
 }
 
-function executeBuyAsset(state: GameState, playerIndex: number, asset: Asset, isDiscounted: boolean): GameState {
+function executeBuyAsset(
+  state: GameState,
+  playerIndex: number,
+  asset: Asset,
+  isDiscounted: boolean,
+  dueDiligenceCost = 0
+): GameState {
   const player = state.players[playerIndex];
   let newState = state;
 
-  const shortfall = asset.downPayment - player.cash;
+  const buyCost = calculateBuyCost(asset) + dueDiligenceCost;
+  const transactionFee = buyCost - asset.downPayment - dueDiligenceCost;
+  const shortfall = buyCost - player.cash;
+
   if (shortfall > 0) {
-    const maxLoan = getMaxLoanAmount(player) - getCurrentDebt(player);
-    if (shortfall > maxLoan) {
-      return addLog(newState, player.id, '现金不足且无法贷款，无法购买', 'system');
-    }
     newState = updatePlayer(newState, playerIndex, (p) => ({
       ...p,
       cash: p.cash + shortfall,
@@ -125,10 +171,12 @@ function executeBuyAsset(state: GameState, playerIndex: number, asset: Asset, is
         ...p.liabilities,
         {
           id: generateId(),
-          name: `${asset.name} 贷款`,
-          principal: shortfall,
-          monthlyPayment: Math.round(shortfall * state.interestRate),
-          interestRate: state.interestRate * 12,
+          ...createLiability({
+            name: `${asset.name} 贷款`,
+            principal: shortfall,
+            debtType: 'bankBusinessLoan',
+            source: 'game',
+          }),
         },
       ],
     }));
@@ -137,21 +185,35 @@ function executeBuyAsset(state: GameState, playerIndex: number, asset: Asset, is
 
   newState = updatePlayer(newState, playerIndex, (p) => ({
     ...p,
-    cash: p.cash - asset.downPayment,
+    cash: p.cash - buyCost,
     assets: [...p.assets, { ...asset, id: generateId() }],
   }));
 
+  if (dueDiligenceCost > 0) {
+    newState = addLog(newState, player.id, `${player.name} 支付尽调费 ${dueDiligenceCost} 元`, 'expense');
+  }
+  if (transactionFee > 0) {
+    newState = addLog(newState, player.id, `${player.name} 支付交易费 ${transactionFee} 元`, 'expense');
+  }
+
   if (asset.mortgage > 0) {
+    const mortgageDebtType =
+      asset.type === 'realEstate'
+        ? getRealEstateMortgageDebtType(player, asset)
+        : 'bankBusinessLoan';
+
     newState = updatePlayer(newState, playerIndex, (p) => ({
       ...p,
       liabilities: [
         ...p.liabilities,
         {
           id: generateId(),
-          name: `${asset.name} 抵押贷款`,
-          principal: asset.mortgage,
-          monthlyPayment: Math.round(asset.mortgage * state.interestRate),
-          interestRate: state.interestRate * 12,
+          ...createLiability({
+            name: `${asset.name} 抵押贷款`,
+            principal: asset.mortgage,
+            debtType: mortgageDebtType,
+            source: 'game',
+          }),
         },
       ],
     }));
@@ -160,11 +222,51 @@ function executeBuyAsset(state: GameState, playerIndex: number, asset: Asset, is
   newState = addLog(
     newState,
     player.id,
-    `${player.name} ${isDiscounted ? '打折购买' : '购买'} ${asset.name}，首付 ${asset.downPayment} 元，月现金流 +${asset.cashFlow} 元`,
+    `${player.name} ${isDiscounted ? '打折购买' : '购买'} ${asset.name}，总支出 ${buyCost} 元，月现金流 +${asset.cashFlow} 元`,
     'asset'
   );
   newState = checkAndHandleBankruptcy(newState);
   return { ...newState, currentCard: null, phase: 'TURN_END' };
+}
+
+function applyAssetImpacts(state: GameState, playerId: string, cardTitle: string, effect: MarketEffect): GameState {
+  if (!effect.assetImpacts) return state;
+
+  let marketMultiplier = { ...state.marketMultiplier };
+  let cashFlowMultiplier = { ...state.cashFlowMultiplier };
+  let sectorMultiplier = { ...state.sectorMultiplier };
+  const impactLogs: string[] = [];
+
+  for (const [key, impact] of Object.entries(effect.assetImpacts)) {
+    if (impact.priceChange) {
+      if (isAssetTypeKey(key)) {
+        marketMultiplier[key] *= impact.priceChange;
+        impactLogs.push(`${getAssetTypeLabel(key)} 估值×${impact.priceChange}`);
+      } else {
+        sectorMultiplier[key] = (sectorMultiplier[key] ?? 1) * impact.priceChange;
+        impactLogs.push(`${key}板块 估值×${impact.priceChange}`);
+      }
+    }
+    if (impact.cashFlowChange) {
+      if (isAssetTypeKey(key)) {
+        cashFlowMultiplier[key] *= impact.cashFlowChange;
+        impactLogs.push(`${getAssetTypeLabel(key)} 现金流×${impact.cashFlowChange}`);
+      } else {
+        sectorMultiplier[key] = (sectorMultiplier[key] ?? 1) * impact.cashFlowChange;
+      }
+    }
+  }
+
+  let newState: GameState = { ...state, marketMultiplier, cashFlowMultiplier, sectorMultiplier };
+
+  if (effect.rateChange) {
+    const newRate = Math.max(0.001, state.interestRate + effect.rateChange);
+    newState = { ...newState, interestRate: newRate };
+    impactLogs.push(`利率调整为 ${(newRate * 100).toFixed(1)}%`);
+  }
+
+  const summary = impactLogs.length > 0 ? impactLogs.slice(0, 4).join('；') : '市场格局发生变化';
+  return addLog(newState, playerId, `【${cardTitle}】${summary}`, 'market');
 }
 
 function applyMarketEffect(state: GameState, playerIndex: number): GameState {
@@ -176,6 +278,10 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
   let newState = state;
 
   switch (effect.type) {
+    case 'macroEvent': {
+      newState = applyAssetImpacts(newState, player.id, card.title, effect);
+      break;
+    }
     case 'assetAppreciation': {
       if (effect.targetAssetType && effect.multiplier) {
         newState = {
@@ -188,7 +294,7 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
         newState = addLog(
           newState,
           player.id,
-          `${effect.targetAssetType} 类资产增值，当前市场乘数 ${newState.marketMultiplier[effect.targetAssetType].toFixed(2)}`,
+          `${getAssetTypeLabel(effect.targetAssetType)} 增值，乘数 ${newState.marketMultiplier[effect.targetAssetType].toFixed(2)}`,
           'market'
         );
       }
@@ -196,14 +302,16 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
     }
     case 'assetDepreciation': {
       if (effect.multiplier) {
-        const multiplier: Record<AssetType, number> = {
-          stock: state.marketMultiplier.stock * effect.multiplier,
-          realEstate: state.marketMultiplier.realEstate * effect.multiplier,
-          business: state.marketMultiplier.business * effect.multiplier,
-          intellectual: state.marketMultiplier.intellectual * effect.multiplier,
-        };
+        const multiplier = { ...state.marketMultiplier };
+        for (const type of Object.keys(multiplier) as AssetType[]) {
+          multiplier[type] *= effect.multiplier;
+        }
         newState = { ...newState, marketMultiplier: multiplier };
-        newState = addLog(newState, player.id, '所有资产贬值', 'market');
+        if (effect.assetImpacts) {
+          newState = applyAssetImpacts(newState, player.id, card.title, effect);
+        } else {
+          newState = addLog(newState, player.id, '所有资产贬值', 'market');
+        }
       }
       break;
     }
@@ -216,12 +324,25 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
       break;
     }
     case 'sectorBoom': {
-      if (effect.sector === 'stock' && effect.multiplier) {
-        newState = {
-          ...newState,
-          marketMultiplier: { ...newState.marketMultiplier, stock: state.marketMultiplier.stock * effect.multiplier },
-        };
-        newState = addLog(newState, player.id, '科技股暴涨，股票市值翻倍', 'market');
+      if (effect.sector && effect.multiplier) {
+        if (isAssetTypeKey(effect.sector)) {
+          newState = {
+            ...newState,
+            marketMultiplier: {
+              ...newState.marketMultiplier,
+              [effect.sector]: state.marketMultiplier[effect.sector] * effect.multiplier,
+            },
+          };
+        } else {
+          newState = {
+            ...newState,
+            sectorMultiplier: {
+              ...newState.sectorMultiplier,
+              [effect.sector]: (state.sectorMultiplier[effect.sector] ?? 1) * effect.multiplier,
+            },
+          };
+        }
+        newState = addLog(newState, player.id, `${effect.sector} 板块暴涨`, 'market');
       }
       break;
     }
@@ -268,11 +389,17 @@ function drawDiscountedOpportunity(state: GameState, playerIndex: number): GameS
     return addLog(state, player.id, '市场没有打折房产可买', 'system');
   }
 
-  const discountedAsset = {
-    ...foundCard.asset,
-    downPayment: Math.round(foundCard.asset.downPayment * discountRate),
-    mortgage: foundCard.asset.cost - Math.round(foundCard.asset.downPayment * discountRate),
-  };
+  const discountedAsset = applyCityTierDownPayment(
+    scaleAssetByPlayerCity(
+      {
+        ...foundCard.asset,
+        downPayment: Math.round(foundCard.asset.downPayment * discountRate),
+        mortgage: foundCard.asset.cost - Math.round(foundCard.asset.downPayment * discountRate),
+      },
+      player.cityId
+    ),
+    player.cityId
+  );
 
   const discountedCard: OpportunityCard = { ...foundCard, asset: discountedAsset };
 
@@ -291,21 +418,55 @@ function drawDiscountedOpportunity(state: GameState, playerIndex: number): GameS
 }
 
 function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?: string): Player {
-  const profession = PROFESSIONS.find((p) => p.id === (isAI ? PROFESSIONS[index % PROFESSIONS.length].id : config.humanProfessionId))!;
+  const professionId = isAI ? PROFESSIONS[index % PROFESSIONS.length].id : config.humanProfessionId;
+  const profession =
+    !isAI && professionId === CUSTOM_PROFESSION_ID && config.customProfession
+      ? buildCustomProfession(config.customProfession)
+      : PROFESSIONS.find((p) => p.id === professionId)!;
+  const city = getCityById(config.cityId ?? DEFAULT_CITY_ID);
   const name = isAI ? aiName || `${['智能 A', '智能 B', '智能 C', '智能 D'][index - 1] || 'AI'}` : config.humanPlayerName;
+
+  const salaryBuff = profession.buff?.salary ?? 1;
+  const expenseBuff = profession.buff?.expense ?? 1;
+  const savingsBuff = profession.buff?.savings ?? 1;
+
+  const salary = Math.round(profession.salary * city.salaryMultiplier * salaryBuff);
+  const cash = Math.round(profession.cash * savingsBuff);
+  const expenses = {
+    ...profession.expenses,
+    tax: Math.round(profession.expenses.tax * city.expenseMultiplier),
+    other: Math.round(profession.expenses.other * city.expenseMultiplier * expenseBuff),
+    perChild: Math.round(profession.expenses.perChild * city.expenseMultiplier),
+    mortgage: 0,
+    studentLoan: 0,
+    carLoan: 0,
+    creditCard: 0,
+  };
 
   return {
     id: generateId(),
     name,
     professionId: profession.id,
+    customProfessionName:
+      !isAI && professionId === CUSTOM_PROFESSION_ID ? config.customProfession?.name.trim() : undefined,
+    cityId: city.id,
     color: PLAYER_COLORS[index % PLAYER_COLORS.length],
     position: 0,
-    cash: profession.cash,
-    salary: profession.salary,
-    expenses: { ...profession.expenses },
+    cash,
+    salary,
+    expenses,
     children: 0,
     assets: [],
-    liabilities: profession.liabilities.map((l) => ({ ...l, id: generateId() })),
+    liabilities: profession.liabilities.map((l) =>
+      normalizeLiability({
+        ...l,
+        id: generateId(),
+        debtType: inferProfessionDebtType(l.name),
+        originalPrincipal: l.principal,
+        paidPeriods: l.paidPeriods ?? 0,
+        source: 'profession' as const,
+      })
+    ),
     isInFastTrack: false,
     fastTrackPosition: 0,
     charityTurns: 0,
@@ -329,7 +490,9 @@ function getInitialState(): GameState {
     },
     discardPiles: { opportunity: [], market: [], doodad: [] },
     currentCard: null,
-    marketMultiplier: { stock: 1, realEstate: 1, business: 1, intellectual: 1 },
+    marketMultiplier: createDefaultMultiplierRecord(),
+    cashFlowMultiplier: createDefaultMultiplierRecord(),
+    sectorMultiplier: {},
     interestRate: 0.01,
     winner: null,
     logs: [],
@@ -343,22 +506,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
   switch (action.type) {
     case 'SETUP_GAME': {
-      const { humanPlayerName, humanProfessionId, aiCount, aiDifficulty } = action.payload;
+      const { humanPlayerName, humanProfessionId, customProfession, cityId, aiCount, aiDifficulty } = action.payload;
+      const config: GameConfig = {
+        humanPlayerName,
+        humanProfessionId,
+        customProfession,
+        cityId: cityId ?? DEFAULT_CITY_ID,
+        aiCount,
+        aiDifficulty,
+      };
       const newState: GameState = {
         ...getInitialState(),
         players: [
-          createPlayer(
-            { humanPlayerName, humanProfessionId, aiCount, aiDifficulty },
-            false,
-            0
-          ),
+          createPlayer(config, false, 0),
           ...Array.from({ length: aiCount }, (_, i) =>
-            createPlayer(
-              { humanPlayerName, humanProfessionId, aiCount, aiDifficulty },
-              true,
-              i + 1,
-              `AI ${i + 1}`
-            )
+            createPlayer(config, true, i + 1, `AI ${i + 1}`)
           ),
         ],
         phase: 'ROLLING',
@@ -427,16 +589,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           return { ...newState, phase: 'CARD_DECISION' };
         }
         case 'baby': {
-          if (player.children < CHILDREN_LIMIT) {
-            newState = updatePlayer(newState, playerIndex, (p) => ({
-              ...p,
-              children: p.children + 1,
-            }));
-            newState = addLog(newState, player.id, `${player.name} 生了一个孩子，月支出增加`, 'expense');
-          } else {
-            newState = addLog(newState, player.id, `${player.name} 已经有太多孩子了`, 'system');
+          if (player.children >= CHILDREN_LIMIT) {
+            newState = addLog(newState, player.id, `${player.name} 已经有 ${CHILDREN_LIMIT} 个孩子了`, 'system');
+            return { ...newState, phase: 'TURN_END' };
           }
-          return { ...newState, phase: 'TURN_END' };
+          return { ...newState, phase: 'CARD_DECISION', currentCard: null };
         }
         case 'settlement': {
           const tax = player.expenses.tax;
@@ -468,13 +625,21 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'BUY_ASSET': {
       const card = state.currentCard;
       if (!card || card.type !== 'opportunity') return state;
-      return executeBuyAsset(state, playerIndex, card.asset, false);
+      const gate = canPurchaseOpportunity(player, card, state.marketMultiplier, state.sectorMultiplier);
+      if (!gate.allowed) {
+        return addLog(state, player.id, `无法购买：${gate.reason}`, 'system');
+      }
+      return executeBuyAsset(state, playerIndex, getOpportunityAsset(card, player), false, card.dueDiligenceCost ?? 0);
     }
 
     case 'BUY_DISCOUNTED_ASSET': {
       const card = state.currentCard;
       if (!card || card.type !== 'opportunity') return state;
-      return executeBuyAsset(state, playerIndex, card.asset, true);
+      const gate = canPurchaseOpportunity(player, card, state.marketMultiplier, state.sectorMultiplier);
+      if (!gate.allowed) {
+        return addLog(state, player.id, `无法购买：${gate.reason}`, 'system');
+      }
+      return executeBuyAsset(state, playerIndex, getOpportunityAsset(card, player), true, card.dueDiligenceCost ?? 0);
     }
 
     case 'DECLINE_CARD': {
@@ -486,7 +651,30 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!card || card.type !== 'doodad') return state;
 
       const cost = card.cost;
-      let newState = updatePlayer(state, playerIndex, (p) => ({
+      let newState = state;
+      const shortfall = Math.max(0, cost - player.cash);
+
+      if (shortfall > 0) {
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          cash: p.cash + shortfall,
+          liabilities: [
+            ...p.liabilities,
+            {
+              id: generateId(),
+              ...createLiability({
+                name: `${card.title} 贷款`,
+                principal: shortfall,
+                debtType: 'creditCard',
+                source: 'game',
+              }),
+            },
+          ],
+        }));
+        newState = addLog(newState, player.id, `${player.name} 为支付 ${card.title} 贷款 ${shortfall} 元`, 'liability');
+      }
+
+      newState = updatePlayer(newState, playerIndex, (p) => ({
         ...p,
         cash: p.cash - cost,
       }));
@@ -512,6 +700,28 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...newState, phase: 'CARD_DECISION' };
     }
 
+    case 'CHOOSE_BABY': {
+      if (!action.payload.haveBaby) {
+        const skipState = addLog(state, player.id, `${player.name} 选择暂不生育`, 'system');
+        return { ...skipState, phase: 'TURN_END', currentCard: null };
+      }
+      if (player.children >= CHILDREN_LIMIT) {
+        return addLog(state, player.id, `${player.name} 已有 ${CHILDREN_LIMIT} 个孩子`, 'system');
+      }
+      let newState = updatePlayer(state, playerIndex, (p) => ({
+        ...p,
+        children: p.children + 1,
+      }));
+      newState = addLog(
+        newState,
+        player.id,
+        `${player.name} 决定生孩子，月支出 +${player.expenses.perChild} 元`,
+        'expense'
+      );
+      newState = checkAndHandleBankruptcy(newState);
+      return { ...newState, phase: 'TURN_END', currentCard: null };
+    }
+
     case 'DONATE_CHARITY': {
       if (!action.payload.donate) {
         return { ...state, phase: 'TURN_END' };
@@ -529,8 +739,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'TAKE_LOAN': {
       const amount = action.payload.amount;
-      const maxLoan = getMaxLoanAmount(player) - getCurrentDebt(player);
-      if (amount > maxLoan) return state;
+      if (amount <= 0) return state;
 
       let newState = updatePlayer(state, playerIndex, (p) => ({
         ...p,
@@ -539,14 +748,72 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           ...p.liabilities,
           {
             id: generateId(),
-            name: '银行贷款',
-            principal: amount,
-            monthlyPayment: Math.round(amount * state.interestRate),
-            interestRate: state.interestRate * 12,
+            ...createLiability({
+              name: '银行贷款',
+              principal: amount,
+              debtType: 'bankBusinessLoan',
+              source: 'game',
+            }),
           },
         ],
       }));
       newState = addLog(newState, player.id, `${player.name} 向银行贷款 ${amount} 元`, 'liability');
+      return newState;
+    }
+
+    case 'REPAY_LIABILITY': {
+      const { liabilityId, amount } = action.payload;
+      const liability = player.liabilities.find((l) => l.id === liabilityId);
+      if (!liability || amount <= 0) return state;
+
+      const debtType = inferDebtTypeFromLiability(liability);
+      const repayAmount = Math.min(amount, liability.principal);
+      const penalty = calcPrepaymentPenalty(debtType, liability.principal, liability.paidPeriods ?? 0);
+      const totalCost = repayAmount + penalty;
+
+      if (player.cash < totalCost) {
+        return addLog(state, player.id, `${player.name} 现金不足，无法偿还 ${liability.name}`, 'system');
+      }
+
+      const oldPayment = liability.monthlyPayment;
+      const newPrincipal = liability.principal - repayAmount;
+      const newPayment =
+        newPrincipal > 0
+          ? calcLiabilityMonthlyPayment(newPrincipal, debtType, liability.totalLoanMonth)
+          : 0;
+
+      let newState = updatePlayer(state, playerIndex, (p) => {
+        const updatedLiabilities =
+          newPrincipal <= 0
+            ? p.liabilities.filter((l) => l.id !== liabilityId)
+            : p.liabilities.map((l) =>
+                l.id === liabilityId
+                  ? { ...l, principal: newPrincipal, monthlyPayment: newPayment }
+                  : l
+              );
+
+        const paymentReduction = oldPayment - newPayment;
+        const expenses =
+          liability.source === 'profession'
+            ? syncExpenseOnRepay(p.expenses, debtType, paymentReduction)
+            : p.expenses;
+
+        return {
+          ...p,
+          cash: p.cash - totalCost,
+          liabilities: updatedLiabilities,
+          expenses,
+        };
+      });
+
+      const penaltyText = penalty > 0 ? `，提前还款罚金 ${penalty} 元` : '';
+      newState = addLog(
+        newState,
+        player.id,
+        `${player.name} 偿还 ${liability.name} 本金 ${repayAmount} 元${penaltyText}，月供 ${oldPayment} → ${newPayment} 元`,
+        'repay'
+      );
+      newState = checkAndHandleBankruptcy(newState);
       return newState;
     }
 
@@ -555,8 +822,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const asset = player.assets.find((a) => a.id === assetId);
       if (!asset) return state;
 
-      const totalMultiplier = multiplier * state.marketMultiplier[asset.type];
-      const sellPrice = getSellPrice(asset, totalMultiplier);
+      const effectiveMult = multiplier * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
+      const sellPrice = calculateSellProceeds(asset, effectiveMult, {});
       let newState = updatePlayer(state, playerIndex, (p) => ({
         ...p,
         cash: p.cash + sellPrice,
@@ -568,13 +835,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'END_TURN': {
-      if (checkFinancialFreedom(player) && !player.isInFastTrack) {
+      if (checkFinancialFreedom(player, state.cashFlowMultiplier, state.sectorMultiplier) && !player.isInFastTrack) {
         const newState = updatePlayer(state, playerIndex, (p) => ({
           ...p,
           isInFastTrack: true,
           fastTrackPosition: 0,
-          // 简化：快车道现金 = 原现金 + 资产当前市值
-          cash: p.cash + getTotalAssetsValue(p, state.marketMultiplier),
+          cash: p.cash + getTotalAssetsValue(p, state.marketMultiplier, state.sectorMultiplier),
           // 保留资产但不保留原负债
           liabilities: [],
           position: 0,

@@ -102,6 +102,13 @@
   font-size: 14px;
   color: var(--color-text-light);
   font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.cityLine {
+  font-size: 12px;
+  color: #666;
+  font-weight: 700;
   margin-bottom: 8px;
 }
 

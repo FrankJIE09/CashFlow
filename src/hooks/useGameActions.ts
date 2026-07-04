@@ -59,6 +59,10 @@ export function useGameActions() {
     dispatch({ type: 'DONATE_CHARITY', payload: { donate } });
   }, [dispatch]);
 
+  const chooseBaby = useCallback((haveBaby: boolean) => {
+    dispatch({ type: 'CHOOSE_BABY', payload: { haveBaby } });
+  }, [dispatch]);
+
   const applyMarketEffect = useCallback(() => {
     dispatch({ type: 'APPLY_MARKET_EFFECT' });
   }, [dispatch]);
@@ -73,6 +77,10 @@ export function useGameActions() {
 
   const takeLoan = useCallback((amount: number) => {
     dispatch({ type: 'TAKE_LOAN', payload: { amount } });
+  }, [dispatch]);
+
+  const repayLiability = useCallback((liabilityId: string, amount: number) => {
+    dispatch({ type: 'REPAY_LIABILITY', payload: { liabilityId, amount } });
   }, [dispatch]);
 
   const sellAsset = useCallback((assetId: string, multiplier: number) => {
@@ -94,10 +102,12 @@ export function useGameActions() {
     declineCard,
     payDoodad,
     donateCharity,
+    chooseBaby,
     applyMarketEffect,
     drawDiscountedOpportunity,
     endTurn,
     takeLoan,
+    repayLiability,
     sellAsset,
     declareBankruptcy,
   };
@@ -106,12 +116,14 @@ export function useGameActions() {
 export function useCreateGameConfig(
   humanName: string,
   professionId: string,
+  cityId: string,
   aiCount: number,
   aiDifficulty: Difficulty
 ): GameConfig {
   return {
     humanPlayerName: humanName || '玩家',
     humanProfessionId: professionId,
+    cityId,
     aiCount,
     aiDifficulty,
   };

@@ -26,6 +26,7 @@
     0 12px 0 rgba(0, 0, 0, 0.08),
     0 24px 60px rgba(0, 0, 0, 0.2);
   border: 4px solid rgba(255, 143, 163, 0.2);
+  position: relative;
 }
 
 .header {
@@ -159,4 +160,181 @@
   color: var(--color-text-light);
   font-size: 11px;
   flex-wrap: wrap;
+}
+
+.subRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0 4px 16px;
+  font-size: 13px;
+  color: var(--color-text-light);
+  font-weight: 600;
+}
+
+.categoryRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px dashed #F0E0E0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sectorTag {
+  margin-left: 8px;
+  background: #E8F4FD;
+  color: #2980b9;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.liabilityGroup {
+  margin-top: 4px;
+}
+
+.liabilityCard {
+  background: #fff;
+  border: 2px dashed #FFE0E0;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.liabilityHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.liabilityName {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.debtTypeBadge {
+  background: #FFF0E8;
+  color: #e67e22;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.liabilityDetails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-light);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.repayButton {
+  width: 100%;
+  padding: 8px 12px;
+  background: linear-gradient(145deg, #7bed9f, #2ed573);
+  color: #1e5631;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.repayOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(74, 74, 74, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 28px;
+}
+
+.repayModal {
+  background: #fff;
+  border-radius: 20px;
+  padding: 20px;
+  width: min(420px, 92%);
+  border: 3px solid rgba(255, 143, 163, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.repayModal h3 {
+  margin: 0 0 8px;
+  color: var(--color-primary-dark);
+}
+
+.repayHint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--color-text-light);
+  font-weight: 600;
+}
+
+.repayLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.repayInput {
+  padding: 10px 12px;
+  border: 2px solid #FFE0E0;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.previewGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.previewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #FFF8F0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.previewItem span:last-child {
+  font-size: 14px;
+}
+
+.repayActions {
+  display: flex;
+  gap: 10px;
+}
+
+.cancelButton,
+.confirmButton {
+  flex: 1;
+  padding: 10px;
+  font-weight: 800;
+}
+
+.cancelButton {
+  background: #f0f0f0;
+  color: var(--color-text);
+}
+
+.confirmButton {
+  background: linear-gradient(145deg, #7bed9f, #2ed573);
+  color: #1e5631;
+}
+
+.confirmButton:disabled {
+  opacity: 0.5;
 }

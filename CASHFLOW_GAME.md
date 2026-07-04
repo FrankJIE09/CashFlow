@@ -3,6 +3,8 @@
 > 基于罗伯特·清崎《富爸爸穷爸爸》改编的桌面棋盘游戏。  
 > 本文档是 React + TypeScript + Vite 技术方案下的完整设计、数据结构与开发指南。
 
+**【调整】文档版本：v3.0 · 最后更新：2026-07-04**
+
 ---
 
 ## 目录
@@ -31,20 +33,37 @@
 
 《CashFlow》是一款模拟现实财务决策的桌面棋盘游戏。玩家在"老鼠赛跑"（Rat Race）内圈中通过买卖资产、管理负债、应对市场波动，最终达成 **月被动收入 > 月总支出** 的财务自由条件，从而跳出内圈进入"快车道"（Fast Track），并最终实现个人梦想。
 
+**【调整】v3.0 核心升级**（在 v2.0 基础上）：
+
+| 模块 | v3.0 变更 | 标签 |
+|------|-----------|------|
+| 城市定位 | 20 城四线分级，影响薪资/支出/首付/房产税 | 【新增】 |
+| 职业系统 | 16 职业 × 四层级（elite/professional/service/basic）+ Buff | 【调整】 |
+| 信贷体系 | 7 类债务统一 **等额本息（EPI）** 月供，提前还款重算 | 【替换】 |
+| 资产定价 | 房产/车辆按玩家城市 `scaleAssetByPlayerCity` 缩放 | 【调整】 |
+| 生育选择 | Baby 格子玩家主动选择，拒绝无惩罚 | 【调整】 |
+| 开局流程 | StartScreen 先选城市再选职业 | 【新增】 |
+
+v2.0 已具备的能力（本文档仍保留说明）：7 类精细化债务、2026 年中国真实资产分类（7 大类 26 子类）、差异化宏观事件卡、房产税（2 套及以上）。
+
 ### 1.2 核心目标
 
 | 阶段 | 目标 | 关键判定 |
 |------|------|----------|
 | **老鼠赛跑** | 积累资产，让被动收入超过总支出 | 月被动收入 > 月总支出 |
-| **快车道** | 实现个人梦想或达到目标财富 | 购买梦想格 / 现金达到目标值 |
+| **快车道** | 积累目标财富 | 现金达到 ¥500,000 |
+| **失败** | 避免月现金流转负 | 月现金流 < 0 → 游戏失败 |
 
 ### 1.3 一局游戏的体验
 
-- 玩家从各自职业出发，初始现金流紧张
-- 每回合掷骰子移动，触发机会、市场、额外支出、发工资、生孩子、慈善等事件
+- 玩家从 **所选城市 + 职业** 出发，初始现金流因城市差异显著不同
+- 每回合掷骰子移动，触发机会、市场、额外支出、发工资、生育选择、慈善等事件
 - 通过投资和交易提高被动收入
+- **现金不足时可无限贷款周转，但贷款无法改善月现金流**
+- **一旦月现金流为负，立即游戏失败**
+- **可主动提前还款，EPI 月供随本金减少而下降**
 - 当被动收入超过总支出时，跳出老鼠赛跑，进入快车道
-- 在快车道通过掷两个骰子快速移动，积累财富实现梦想
+- 快车道现金达到 ¥500,000 即获胜
 
 ---
 
@@ -53,18 +72,28 @@
 | 项目 | 选择 | 说明 |
 |------|------|------|
 | 语言 | **TypeScript 5.x** | 强类型，便于维护复杂状态 |
-| 框架 | **React 18 + Vite 5** | 轻量、热更新快、可部署静态页面 |
-| 样式 | **CSS Modules** | 组件级样式隔离，避免命名冲突 |
+| 框架 | **React 19 + Vite 8** | 轻量、热更新快、可部署静态页面 |
+| 样式 | **CSS Modules + CSS 变量** | 组件级样式隔离，全局马卡龙主题 |
+| 动画 | **framer-motion** | 骰子滚动、棋子弹跳、弹窗、进度条 |
+| 音效 | **Web Audio API** | 程序化合成音效，无需外部音频文件 |
 | 状态管理 | **React Context + useReducer** | 游戏状态集中管理，无需额外依赖 |
 | 路由 | 暂无（单页游戏） | 后续扩展可引入 react-router |
-| 部署 | 静态网页（Netlify / Vercel / GitHub Pages） | 纯前端，无需后端 |
+| 部署 | **GitHub Pages** | 纯前端静态站点，推送即自动部署 |
 | 扩展 | **Electron** | 未来可打包为桌面应用 |
 
-### 2.1 不依赖第三方库的原因
+### 2.1 在线地址
 
-- 游戏状态天然适合不可变数据 + reducer
-- 卡牌和棋盘数据可用普通数组/对象管理
-- 减少依赖，降低打包体积和长期维护成本
+| 环境 | 地址 |
+|------|------|
+| 线上游玩 | https://FrankJIE09.github.io/CashFlow/ |
+| 源码仓库 | https://github.com/FrankJIE09/CashFlow |
+| 本地开发 | `npm run dev` → http://localhost:5173/ |
+
+部署方式：GitHub Actions 在 push 到 `master` 时自动 `npm run build` 并发布到 GitHub Pages。`vite.config.ts` 中 `base: '/CashFlow/'` 适配 Pages 子路径。
+
+### 2.2 依赖说明
+
+除 React 生态外，引入 **framer-motion** 负责 UI 动画；音效通过 **Web Audio API** 在 `useSound` Hook 中合成，不引入额外音频库。
 
 ---
 
@@ -72,71 +101,137 @@
 
 ### 3.1 类型定义总览
 
+**【调整】** 以下类型为 v3.0 完整定义，开发以 `src/types/game.ts` 为准。
+
 ```typescript
 // src/types/game.ts
 
 export type GamePhase =
-  | 'SETUP'            // 选择职业、玩家数量
-  | 'ROLLING'          // 等待掷骰子
-  | 'MOVING'           // 棋子移动动画中
-  | 'EVENT_RESOLVING'  // 正在处理格子事件
-  | 'CARD_DECISION'    // 玩家正在做卡片决策
-  | 'TURN_END'         // 等待结束回合
-  | 'FAST_TRACK'       // 进入快车道
-  | 'GAME_OVER';       // 游戏结束
+  | 'SETUP'
+  | 'ROLLING'
+  | 'MOVING'
+  | 'EVENT_RESOLVING'
+  | 'CARD_DECISION'
+  | 'TURN_END'
+  | 'FAST_TRACK'
+  | 'GAME_OVER';
 
-export type AssetType = 'stock' | 'realEstate' | 'business' | 'intellectual';
+export type AssetType =
+  | 'stock' | 'bond' | 'reit' | 'commodity' | 'derivative'
+  | 'overseas' | 'entity' | 'realEstate' | 'business' | 'intellectual';
+
+export type IncomeType = 'capitalGain' | 'dividend' | 'interest' | 'rent' | 'operating';
+export type LiquidityType = 'T+0' | 'T+1' | 'T+2' | 'illiquid';
+export type RiskLevel = 'low' | 'medium' | 'high' | 'veryHigh';
+export type InfoTier = 'basic' | 'standard' | 'premium';
 
 export type CardType = 'opportunity' | 'market' | 'doodad';
 export type OpportunityKind = 'smallDeal' | 'bigDeal';
 
 export type SpaceType =
-  | 'payday'
-  | 'opportunity'
-  | 'market'
-  | 'doodad'
-  | 'charity'
-  | 'baby'
-  | 'settlement';
+  | 'payday' | 'opportunity' | 'market' | 'doodad'
+  | 'charity' | 'baby' | 'settlement';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
+/** 7 类债务类型 */
+export type DebtType =
+  | 'creditCard'       // 信用卡：18% 年化，24 期 EPI
+  | 'consumerLoan'     // 消费贷：9.6% 年化，36 期 EPI
+  | 'carLoan'          // 车贷：4.2% 年化，60 期 EPI
+  | 'houseFirst'       // 首套房贷：3% 年化，360 期 EPI
+  | 'houseSecond'      // 二套房贷：4% 年化，360 期 EPI
+  | 'shopMortgage'     // 商铺抵押：5.04% 年化，240 期 EPI
+  | 'bankBusinessLoan'; // 银行贷款：12% 年化，仅付息
+
+/** 【调整】v3.0 城市线级：四线分级 */
+export type CityTier = 'tier1' | 'tier2' | 'tier3' | 'tier4';
+
+/** 房产/商铺等级（含 commercial 商铺，用于机会卡 metadata） */
+export type PropertyTier = CityTier | 'commercial';
+
+/** 【新增】v3.0 城市实体 */
+export interface City {
+  id: string;
+  name: string;
+  tier: CityTier;
+  salaryMultiplier: number;    // 相对 tier2 基准的薪资乘数
+  expenseMultiplier: number;   // 生活成本乘数
+  propertyTaxRate: number;     // 持有房产年税率（小数）
+  downPaymentFirst: number;    // 首套房首付比例
+  downPaymentSecond: number;   // 二套房首付比例
+}
+
+/** 【新增】v3.0 职业层级 */
+export type ProfessionTier = 'elite' | 'professional' | 'service' | 'basic';
+
 export interface ExpenseBreakdown {
   tax: number;
-  mortgage: number;
+  mortgage: number;      // 遗留字段，v3.0 实际月供来自 liabilities
   studentLoan: number;
   carLoan: number;
   creditCard: number;
   other: number;
   perChild: number;
+  taxHouse?: number;     // 多套房产持有税（动态计算）
+}
+
+export interface AssetMetadata {
+  sector?: string;
+  subCategory?: string;
+  cityTier?: PropertyTier;   // 【调整】机会卡基准城市线级
+  ticker?: string;
+  exchange?: string;
+  liquidity?: LiquidityType;
+  incomeType?: IncomeType;
+  riskLevel?: RiskLevel;
+  peTTM?: number;
+  pb?: number;
+  dividendYield?: number;
+  creditRating?: string;
+  couponRate?: number;
+  ytm?: number;
+  trackingIndex?: string;
+  managementFee?: number;
+  minInvestment?: number;
+  accountRequirement?: string;
 }
 
 export interface Asset {
   id: string;
   name: string;
   type: AssetType;
-  cost: number;           // 资产总价
-  downPayment: number;    // 首付
-  cashFlow: number;       // 每月现金流
-  mortgage: number;       // 贷款金额（cost - downPayment）
-  marketValue: number;    // 当前市场价值
-  shares?: number;        // 股票股数
+  cost: number;
+  downPayment: number;
+  cashFlow: number;
+  mortgage: number;
+  marketValue: number;
+  shares?: number;
+  metadata?: AssetMetadata;
 }
 
+/** 【调整】v3.0 负债 — 含 totalLoanMonth 与 EPI 月供 */
 export interface Liability {
   id: string;
   name: string;
-  principal: number;      // 剩余本金
-  monthlyPayment: number; // 月供
-  interestRate: number;   // 年利率
+  principal: number;
+  monthlyPayment: number;
+  interestRate: number;
+  debtType?: DebtType;
+  originalPrincipal?: number;
+  paidPeriods?: number;
+  totalLoanMonth?: number;       // 【v3.0】等额本息总期数
+  prepaymentPenaltyRate?: number;
+  source?: 'profession' | 'game';
 }
 
 export interface Player {
   id: string;
   name: string;
   professionId: string;
+  cityId: string;                // 【新增】v3.0 玩家所在城市
   color: string;
-  position: number;       // 棋盘位置 0-23
+  position: number;
   cash: number;
   salary: number;
   expenses: ExpenseBreakdown;
@@ -144,94 +239,121 @@ export interface Player {
   assets: Asset[];
   liabilities: Liability[];
   isInFastTrack: boolean;
-  fastTrackPosition: number; // 快车道位置
+  fastTrackPosition: number;
   dream?: string;
   dreamCost?: number;
-  charityTurns: number;      // 剩余可使用双骰子回合数
+  charityTurns: number;
   isAI: boolean;
   difficulty?: Difficulty;
   isBankrupt: boolean;
 }
 
-export interface Space {
-  id: number;
-  type: SpaceType;
+export interface GameConfig {
+  humanPlayerName: string;
+  humanProfessionId: string;
+  cityId: string;                // 【新增】v3.0 开局所选城市
+  aiCount: number;
+  aiDifficulty: Difficulty;
+}
+
+export interface Profession {
+  id: string;
   name: string;
+  tier: ProfessionTier;          // 【新增】v3.0
+  salary: number;                // tier2 基准月薪
+  cash: number;
+  expenses: ExpenseBreakdown;
+  liabilities: Omit<Liability, 'id'>[];
   description: string;
+  buff?: { salary?: number; expense?: number; savings?: number }; // 【新增】
 }
 
-export interface BaseCard {
-  id: string;
-  title: string;
-  description: string;
-  type: CardType;
-}
-
-export interface OpportunityCard extends BaseCard {
-  type: 'opportunity';
-  kind: OpportunityKind;
-  asset: Asset;
-  minCashRequired?: number;
-}
-
-export interface MarketCard extends BaseCard {
-  type: 'market';
-  effect: MarketEffect;
-}
-
-export interface DoodadCard extends BaseCard {
-  type: 'doodad';
-  cost: number;
-  isRecurring: boolean;
-  monthlyCost?: number;
-}
-
-export type Card = OpportunityCard | MarketCard | DoodadCard;
-
-export interface MarketEffect {
-  type: 'assetAppreciation' | 'assetDepreciation' | 'buyout' | 'interestRate' | 'discount' | 'sectorBoom';
-  targetAssetType?: AssetType;
-  multiplier?: number;
-  rateChange?: number;
-  discountRate?: number;
-  sector?: string;
-}
-
-export interface GameState {
-  phase: GamePhase;
-  players: Player[];
-  currentPlayerIndex: number;
-  round: number;
-  spaces: Space[];
-  decks: {
-    opportunity: Card[];
-    market: Card[];
-    doodad: Card[];
-  };
-  discardPiles: {
-    opportunity: Card[];
-    market: Card[];
-    doodad: Card[];
-  };
-  currentCard: Card | null;
-  marketMultiplier: Record<AssetType, number>; // 当前市场乘数
-  interestRate: number;
-  winner: Player | null;
-  logs: LogEntry[];
-}
-
-export interface LogEntry {
-  id: string;
-  timestamp: number;
-  playerId: string;
-  message: string;
-  type: 'move' | 'income' | 'expense' | 'asset' | 'liability' | 'market' | 'system' | 'win';
-}
+/** 【调整】v3.0 GameAction — 含 CHOOSE_BABY */
+export type GameAction =
+  | { type: 'SETUP_GAME'; payload: GameConfig }
+  | { type: 'RESTART_GAME' }
+  | { type: 'ROLL_DICE'; payload: { dice: number } }
+  | { type: 'MOVE_PLAYER' }
+  | { type: 'RESOLVE_SPACE' }
+  | { type: 'DRAW_CARD'; payload: { cardType: CardType } }
+  | { type: 'BUY_ASSET' }
+  | { type: 'BUY_DISCOUNTED_ASSET' }
+  | { type: 'DECLINE_CARD' }
+  | { type: 'PAY_DOODAD' }
+  | { type: 'DONATE_CHARITY'; payload: { donate: boolean } }
+  | { type: 'CHOOSE_BABY'; payload: { haveBaby: boolean } }   // 【新增】
+  | { type: 'APPLY_MARKET_EFFECT' }
+  | { type: 'DRAW_DISCOUNTED_OPPORTUNITY' }
+  | { type: 'END_TURN' }
+  | { type: 'TAKE_LOAN'; payload: { amount: number } }
+  | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
+  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number } }
+  | { type: 'DECLARE_BANKRUPTCY' };
 ```
 
-### 3.2 状态不可变性原则
+### 3.2 【调整】v3.0 债务类型与 EPI 参数
 
-所有 reducer 中的状态更新必须遵循不可变数据原则。复杂对象的更新使用浅拷贝或 immer（如后续引入）。
+债务配置统一在 `src/utils/financial.ts` 的 `DEBT_TYPE_CONFIG`（不再单独维护 `debtConfig.ts`）。
+
+| debtType | 中文名 | 月利率 | 年化 | EPI 期数 | 提前还款规则 |
+|----------|--------|--------|------|----------|--------------|
+| `creditCard` | 信用卡 | 1.5% | 18% | 24 | 无违约金 |
+| `consumerLoan` | 消费贷 | 0.8% | 9.6% | 36 | paidPeriods < 12 → 罚剩余本金 3% |
+| `carLoan` | 车贷 | 0.35% | 4.2% | 60 | paidPeriods < 12 → 罚 2%；≥12 免罚 |
+| `houseFirst` | 首套房贷 | 0.25% | 3% | 360 | paidPeriods < 12 → 罚 1%；≥12 免罚 |
+| `houseSecond` | 二套房贷 | 0.33% | 4% | 360 | 始终罚剩余本金 1% |
+| `shopMortgage` | 商铺抵押 | 0.42% | 5.04% | 240 | 始终罚剩余本金 2% |
+| `bankBusinessLoan` | 银行贷款 | 1.0% | 12% | — | 仅付息，无违约金 |
+
+```typescript
+// src/utils/financial.ts — DEBT_TYPE_CONFIG 摘要
+export const DEBT_TYPE_CONFIG: Record<DebtType, DebtTypeConfig> = {
+  creditCard:       { monthlyRate: 0.015,  label: '信用卡',     totalLoanMonth: 24 },
+  consumerLoan:     { monthlyRate: 0.008,  label: '消费贷',     totalLoanMonth: 36,
+                      penaltyIfBeforePeriods: 0.03, penaltyBeforePeriods: 12 },
+  carLoan:          { monthlyRate: 0.0035, label: '车贷',       totalLoanMonth: 60,
+                      freePrepayAfterPeriods: 12, penaltyRate: 0.02 },
+  houseFirst:       { monthlyRate: 0.0025, label: '首套房贷',   totalLoanMonth: 360,
+                      freePrepayAfterPeriods: 12, penaltyRate: 0.01 },
+  houseSecond:      { monthlyRate: 0.0033, label: '二套房贷',   totalLoanMonth: 360,
+                      alwaysPenaltyRate: 0.01 },
+  shopMortgage:     { monthlyRate: 0.0042, label: '商铺抵押贷', totalLoanMonth: 240,
+                      alwaysPenaltyRate: 0.02 },
+  bankBusinessLoan: { monthlyRate: 0.01,   label: '银行贷款',   interestOnly: true },
+};
+```
+
+### 3.3 资产分类体系（7 大类 · 26 子类）
+
+| 大类 AssetType | 子类 subCategory | 2026 代表标的 | 流动性 | 收入类型 |
+|----------------|------------------|---------------|--------|----------|
+| **stock 权益类** | `blueChip` 蓝筹 | 工商银行 601398、长江电力 600900 | T+1 | dividend |
+| | `growth` 成长 | 宁德时代 300750、中芯国际 688981 | T+1 | dividend |
+| | `dividend` 高股息 | 中国神华 601088 | T+1 | dividend |
+| | `tech` 科技 | 科大讯飞 002230、海康威视 002415 | T+1 | dividend |
+| **bond 固收类** | `govBond` 国债 | 24 国债 09、国开债 ETF 159650 | T+0/T+1 | interest |
+| | `corpBond` 企业债 | 22 万科 MTN001 | T+1 | interest |
+| | `convertible` 可转债 | 南银转债 113050 | T+1 | interest |
+| **commodity 大宗商品** | `precious` 贵金属 | 黄金 ETF 518880 | T+1 | capitalGain |
+| | `energy` 能源 | 原油 LOF 161129 | T+1 | capitalGain |
+| | `agriculture` 农产品 | 豆粕 ETF 159985 | T+1 | capitalGain |
+| **reit REITs** | `logistics` 物流仓储 | 中金普洛斯 REIT 508056 | T+1 | rent |
+| | `infrastructure` 基础设施 | 华夏中国交建 REIT 508018 | T+1 | rent |
+| | `residential` 住宅 | 红土创新深圳安居 REIT 180501 | T+1 | rent |
+| **derivative 衍生品** | `option` 期权 | 50ETF 购 3 月 2800 | T+0 | capitalGain |
+| | `future` 期货 | 沪深 300 股指期货 IF | T+0 | capitalGain |
+| **overseas 海外** | `usEquity` 美股 | 纳指 100 ETF 159509 | T+1 | dividend |
+| | `hkEquity` 港股 | 恒生 ETF 159920 | T+1 | dividend |
+| | `globalBond` 海外债 | 中概互联 ETF 513050 | T+1 | interest |
+| **entity 实体经营** | `franchise` 加盟 | 社区便利店、奶茶加盟 | illiquid | operating |
+| | `selfEmployed` 个体 | 自媒体工作室 | illiquid | operating |
+| | `sme` 小微企业 | 自动化洗车房 | illiquid | operating |
+| **realEstate 房地产** | `tier4`/`tier3`/`tier2`/`tier1` | 按 cityTier 分级 | illiquid | rent |
+| | `commercial` 商铺 | 社区底商 | illiquid | rent |
+
+### 3.4 状态不可变性原则
+
+所有 reducer 中的状态更新必须遵循不可变数据原则。复杂对象的更新使用浅拷贝。
 
 ---
 
@@ -239,217 +361,201 @@ export interface LogEntry {
 
 ### 4.1 职业设计原则
 
-- 高收入职业往往伴随着高支出，跳出老鼠赛跑所需的投资额也更高
-- 低收入职业起点低，但目标门槛低，适合新手体验"质变"
-- 每个职业都有明确的教育意义：比如医生现金流高但支出也高，教师现金流低但容易突破
+**【调整】** v3.0 职业体系扩展为 **16 职业 × 四层级**：
 
-### 4.2 职业列表
+| 层级 ProfessionTier | 代表职业 | 特征 |
+|---------------------|----------|------|
+| `elite` 精英层 | 医生、律师、飞行员 | 高薪高负债，Buff 偏薪资/储蓄 |
+| `professional` 专业层 | 工程师、教师、护士、会计、设计师 | 收入稳定，适合主流玩家 |
+| `service` 服务层 | 司机、秘书、销售 | 中等收入，部分有业绩 Buff |
+| `basic` 基础层 | 保安、外卖员、工厂工人、自由职业者、收银员 | 低门槛，支出 Buff 或极低负债 |
 
-| 职业 | 工资 | 月支出 | 月现金流 | 初始现金 | 总负债 |
-|------|------|--------|----------|----------|--------|
-| 工程师 | ¥7,500 | ¥5,200 | ¥2,300 | ¥1,000 | ¥47,000 |
-| 教师 | ¥3,500 | ¥2,100 | ¥1,400 | ¥550 | ¥18,000 |
-| 医生 | ¥13,000 | ¥9,700 | ¥3,300 | ¥1,500 | ¥94,000 |
-| 司机 | ¥2,500 | ¥1,600 | ¥900 | ¥400 | ¥12,000 |
-| 秘书 | ¥2,800 | ¥1,800 | ¥1,000 | ¥500 | ¥14,500 |
-| 保安 | ¥2,000 | ¥1,300 | ¥700 | ¥350 | ¥10,000 |
-| 律师 | ¥10,000 | ¥7,600 | ¥2,400 | ¥1,200 | ¥72,000 |
-| 飞行员 | ¥6,000 | ¥4,100 | ¥1,900 | ¥800 | ¥36,000 |
+**薪资与城市联动**（`GameReducer.createPlayer`）：
 
-### 4.3 职业详细财务报表
+```
+实际月薪 = profession.salary × city.salaryMultiplier × buff.salary
+实际 tax  = profession.expenses.tax × city.expenseMultiplier
+实际 other = profession.expenses.other × city.expenseMultiplier × buff.expense
+实际 perChild = profession.expenses.perChild × city.expenseMultiplier
+初始现金   = profession.cash × buff.savings
+```
+
+- `profession.salary` 以 **tier2（杭州基准）** 定价
+- 职业初始 `expenses.mortgage/carLoan/creditCard` 置 0，**实际月供来自 `liabilities` EPI 计算**
+- 每个职业初始负债带 `debtType` 与 `paidPeriods`，由 `normalizeLiability` 统一规范化
+
+### 4.2 【调整】16 职业总览
+
+| 职业 | 层级 | 基准工资 | 初始现金 | Buff | 主要负债 |
+|------|------|----------|----------|------|----------|
+| 医生 | elite | 22,000 | 15,000 | 薪资+8%, 支出+10% | 房贷 120 万 + 消费贷 + 车贷 + 信用卡 |
+| 律师 | elite | 18,000 | 12,000 | 薪资+6% | 房贷 90 万 + 消费贷 + 车贷 + 信用卡 |
+| 飞行员 | elite | 15,000 | 10,000 | 薪资+4%, 储蓄+10% | 房贷 70 万 + 车贷 + 信用卡 |
+| 工程师 | professional | 12,000 | 8,000 | 薪资+5% | 房贷 60 万 + 车贷 + 信用卡 |
+| 教师 | professional | 6,500 | 5,000 | 支出-8% | 房贷 28 万 + 消费贷 |
+| 护士 | professional | 7,500 | 4,500 | — | 房贷 32 万 + 车贷 + 信用卡 |
+| 会计 | professional | 9,000 | 6,000 | 储蓄+8% | 房贷 45 万 + 车贷 |
+| 设计师 | professional | 8,500 | 5,500 | — | 房贷 38 万 + 消费贷 + 信用卡 |
+| 司机 | service | 5,500 | 3,000 | — | 房贷 15 万 + 车贷 + 信用卡 |
+| 秘书 | service | 6,000 | 4,000 | — | 房贷 18 万 + 车贷 + 信用卡 |
+| 销售 | service | 7,000 | 3,500 | 薪资+10% | 房贷 22 万 + 车贷 + 信用卡 |
+| 保安 | basic | 4,500 | 2,500 | 支出-12% | 房贷 12 万 + 车贷 + 信用卡 |
+| 外卖员 | basic | 5,000 | 2,000 | — | 房贷 10 万 + 消费贷 + 信用卡 |
+| 工厂工人 | basic | 4,800 | 2,800 | — | 房贷 13 万 + 车贷 |
+| 自由职业者 | basic | 6,500 | 4,000 | 薪资-5%, 支出-10% | 房贷 20 万 + 信用卡 |
+| 收银员 | basic | 4,200 | 2,200 | — | 房贷 9 万 + 信用卡 |
+
+### 4.3 职业数据样本
 
 ```typescript
 // src/data/professions.ts
-export interface Profession {
-  id: string;
-  name: string;
-  salary: number;
-  cash: number;
-  expenses: ExpenseBreakdown;
-  liabilities: Omit<Liability, 'id'>[];
-  description: string;
-}
-
 export const PROFESSIONS: Profession[] = [
   {
     id: 'engineer',
     name: '工程师',
-    salary: 7500,
-    cash: 1000,
-    expenses: {
-      tax: 1500,
-      mortgage: 2000,
-      studentLoan: 0,
-      carLoan: 400,
-      creditCard: 300,
-      other: 1000,
-      perChild: 300,
-    },
+    tier: 'professional',
+    salary: 12000,          // tier2 基准
+    cash: 8000,
+    buff: { salary: 1.05 },
+    expenses: { tax: 1800, mortgage: 0, studentLoan: 0, carLoan: 0, creditCard: 0, other: 3000, perChild: 800 },
     liabilities: [
-      { name: '房屋贷款', principal: 40000, monthlyPayment: 2000, interestRate: 0.06 },
-      { name: '汽车贷款', principal: 5000, monthlyPayment: 400, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 2000, monthlyPayment: 300, interestRate: 0.18 },
+      makeLiability('房屋贷款', 600000, 'houseFirst', 24),
+      makeLiability('汽车贷款', 80000, 'carLoan', 18),
+      makeLiability('信用卡欠款', 15000, 'creditCard'),
     ],
-    description: '收入稳定，支出适中，是新手入门的理想职业。',
+    description: '互联网工程师，收入稳定，Tech Buff +5% 薪资。',
   },
-  {
-    id: 'teacher',
-    name: '教师',
-    salary: 3500,
-    cash: 550,
-    expenses: {
-      tax: 800,
-      mortgage: 1000,
-      studentLoan: 0,
-      carLoan: 0,
-      creditCard: 100,
-      other: 200,
-      perChild: 150,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 15000, monthlyPayment: 1000, interestRate: 0.06 },
-      { name: '信用卡欠款', principal: 500, monthlyPayment: 100, interestRate: 0.18 },
-    ],
-    description: '收入较低但支出也低，容易实现财务自由。',
-  },
-  {
-    id: 'doctor',
-    name: '医生',
-    salary: 13000,
-    cash: 1500,
-    expenses: {
-      tax: 3000,
-      mortgage: 5000,
-      studentLoan: 800,
-      carLoan: 800,
-      creditCard: 500,
-      other: 1600,
-      perChild: 600,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 75000, monthlyPayment: 5000, interestRate: 0.06 },
-      { name: '助学贷款', principal: 12000, monthlyPayment: 800, interestRate: 0.05 },
-      { name: '汽车贷款', principal: 15000, monthlyPayment: 800, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 5000, monthlyPayment: 500, interestRate: 0.18 },
-    ],
-    description: '高收入高支出，虽然现金流充裕，但要突破需要更大规模的资产。',
-  },
-  {
-    id: 'driver',
-    name: '司机',
-    salary: 2500,
-    cash: 400,
-    expenses: {
-      tax: 500,
-      mortgage: 600,
-      studentLoan: 0,
-      carLoan: 300,
-      creditCard: 100,
-      other: 100,
-      perChild: 100,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 9000, monthlyPayment: 600, interestRate: 0.06 },
-      { name: '汽车贷款', principal: 3000, monthlyPayment: 300, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 500, monthlyPayment: 100, interestRate: 0.18 },
-    ],
-    description: '起点最低，但压力也最小，每一笔小生意都可能改变命运。',
-  },
-  {
-    id: 'secretary',
-    name: '秘书',
-    salary: 2800,
-    cash: 500,
-    expenses: {
-      tax: 600,
-      mortgage: 700,
-      studentLoan: 0,
-      carLoan: 300,
-      creditCard: 100,
-      other: 100,
-      perChild: 120,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 10000, monthlyPayment: 700, interestRate: 0.06 },
-      { name: '汽车贷款', principal: 3000, monthlyPayment: 300, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 500, monthlyPayment: 100, interestRate: 0.18 },
-    ],
-    description: '收支平衡，需要通过精明的小投资来逐步突破。',
-  },
-  {
-    id: 'security',
-    name: '保安',
-    salary: 2000,
-    cash: 350,
-    expenses: {
-      tax: 400,
-      mortgage: 500,
-      studentLoan: 0,
-      carLoan: 200,
-      creditCard: 50,
-      other: 150,
-      perChild: 80,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 7000, monthlyPayment: 500, interestRate: 0.06 },
-      { name: '汽车贷款', principal: 2000, monthlyPayment: 200, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 300, monthlyPayment: 50, interestRate: 0.18 },
-    ],
-    description: '现金流微薄，每一次额外支出都可能是致命的。',
-  },
-  {
-    id: 'lawyer',
-    name: '律师',
-    salary: 10000,
-    cash: 1200,
-    expenses: {
-      tax: 2500,
-      mortgage: 3000,
-      studentLoan: 500,
-      carLoan: 600,
-      creditCard: 400,
-      other: 1000,
-      perChild: 450,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 55000, monthlyPayment: 3000, interestRate: 0.06 },
-      { name: '助学贷款', principal: 10000, monthlyPayment: 500, interestRate: 0.05 },
-      { name: '汽车贷款', principal: 10000, monthlyPayment: 600, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 4000, monthlyPayment: 400, interestRate: 0.18 },
-    ],
-    description: '高收入群体，但高支出也使其财务自由门槛较高。',
-  },
-  {
-    id: 'pilot',
-    name: '飞行员',
-    salary: 6000,
-    cash: 800,
-    expenses: {
-      tax: 1500,
-      mortgage: 1500,
-      studentLoan: 0,
-      carLoan: 500,
-      creditCard: 300,
-      other: 300,
-      perChild: 250,
-    },
-    liabilities: [
-      { name: '房屋贷款', principal: 30000, monthlyPayment: 1500, interestRate: 0.06 },
-      { name: '汽车贷款', principal: 7000, monthlyPayment: 500, interestRate: 0.07 },
-      { name: '信用卡欠款', principal: 2000, monthlyPayment: 300, interestRate: 0.18 },
-    ],
-    description: '收入不错，支出可控，是比较均衡的职业。',
-  },
+  // ... 共 16 职业，见 src/data/professions.ts
 ];
+
+export const PROFESSION_TIER_LABELS: Record<ProfessionTier, string> = {
+  elite: '精英层',
+  professional: '专业层',
+  service: '服务层',
+  basic: '基础层',
+};
 ```
 
-### 4.4 职业选择建议文案
+### 4.4 职业选择建议
 
-| 职业 | 适合玩家 |
-|------|----------|
-| 教师 / 司机 / 保安 | 新手，希望快速体验财务自由 |
-| 工程师 / 飞行员 | 中级玩家，追求平衡体验 |
-| 医生 / 律师 | 高级玩家，喜欢挑战高支出职业 |
+| 城市 × 职业组合 | 适合玩家 |
+|-----------------|----------|
+| 四线 + 保安/收银员 | 新手，极低生活成本，快速体验财务自由 |
+| 二线 + 教师/会计 | 平衡型，Buff 友好 |
+| 一线 + 工程师/销售 | 中级挑战，高薪资也高支出 |
+| 一线 + 医生/律师 | 高级玩家，高负债高回报 |
+
+### 4.5 【新增】城市定位系统
+
+v3.0 引入 **20 个城市 · 四线分级**，作为开局第一选项，影响全局财务参数。
+
+#### 4.5.1 CityTier 与 City 接口
+
+```typescript
+export type CityTier = 'tier1' | 'tier2' | 'tier3' | 'tier4';
+
+export interface City {
+  id: string;
+  name: string;
+  tier: CityTier;
+  salaryMultiplier: number;    // 薪资乘数（相对 tier2 基准）
+  expenseMultiplier: number;   // 生活成本乘数
+  propertyTaxRate: number;     // 持有房产年税率（小数，如 0.004 = 0.4%）
+  downPaymentFirst: number;    // 首套房首付比例
+  downPaymentSecond: number;   // 二套房首付比例
+}
+```
+
+#### 4.5.2 20 城市列表
+
+| 线级 | 城市 | id | 薪资× | 生活× | 房产税率 | 首套首付 | 二套首付 |
+|------|------|-----|-------|-------|----------|----------|----------|
+| **一线 tier1** | 上海 | shanghai | 1.15 | 1.35 | 0.6% | 30% | 40% |
+| | 北京 | beijing | 1.12 | 1.32 | 0.6% | 30% | 40% |
+| | 深圳 | shenzhen | 1.10 | 1.30 | 0.5% | 30% | 40% |
+| | 广州 | guangzhou | 1.05 | 1.22 | 0.5% | 30% | 38% |
+| **二线 tier2** | 杭州 | hangzhou | 1.00 | 1.08 | 0.4% | 25% | 35% |
+| | 成都 | chengdu | 0.92 | 0.95 | 0.4% | 25% | 35% |
+| | 武汉 | wuhan | 0.90 | 0.92 | 0.4% | 25% | 35% |
+| | 南京 | nanjing | 0.95 | 1.00 | 0.4% | 25% | 35% |
+| | 苏州 | suzhou | 0.98 | 1.02 | 0.4% | 25% | 35% |
+| | 西安 | xian | 0.85 | 0.88 | 0.35% | 25% | 32% |
+| | 重庆 | chongqing | 0.88 | 0.90 | 0.35% | 25% | 32% |
+| | 天津 | tianjin | 0.87 | 0.90 | 0.4% | 25% | 35% |
+| **三线 tier3** | 长沙 | changsha | 0.78 | 0.78 | 0.3% | 20% | 30% |
+| | 郑州 | zhengzhou | 0.75 | 0.75 | 0.3% | 20% | 30% |
+| | 合肥 | hefei | 0.80 | 0.80 | 0.3% | 20% | 30% |
+| | 昆明 | kunming | 0.72 | 0.72 | 0.25% | 20% | 28% |
+| | 南宁 | nanning | 0.70 | 0.70 | 0.25% | 20% | 28% |
+| **四线 tier4** | 常德 | changde | 0.58 | 0.58 | 0.2% | 15% | 25% |
+| | 绵阳 | mianyang | 0.60 | 0.60 | 0.2% | 15% | 25% |
+| | 遵义 | zunyi | 0.55 | 0.55 | 0.2% | 15% | 25% |
+
+默认城市：`hangzhou`（杭州）。
+
+#### 4.5.3 代码映射（src/data/cities.ts）
+
+```typescript
+import type { City, CityTier } from '../types/game';
+
+export const CITIES: City[] = [
+  { id: 'shanghai', name: '上海', tier: 'tier1', salaryMultiplier: 1.15, expenseMultiplier: 1.35, propertyTaxRate: 0.006, downPaymentFirst: 0.3, downPaymentSecond: 0.4 },
+  { id: 'beijing', name: '北京', tier: 'tier1', salaryMultiplier: 1.12, expenseMultiplier: 1.32, propertyTaxRate: 0.006, downPaymentFirst: 0.3, downPaymentSecond: 0.4 },
+  // ... 共 20 城
+];
+
+export const DEFAULT_CITY_ID = 'hangzhou';
+
+export const CITY_TIER_PRICE_MULTIPLIER: Record<CityTier, number> = {
+  tier1: 2.8,   // 相对 tier2 的房产基准价乘数
+  tier2: 1.0,
+  tier3: 0.45,
+  tier4: 0.28,
+};
+
+export function getCityById(cityId?: string): City {
+  return CITIES.find((c) => c.id === cityId) ?? CITIES.find((c) => c.id === DEFAULT_CITY_ID)!;
+}
+```
+
+#### 4.5.4 玩家与配置字段
+
+```typescript
+// Player
+cityId: string;   // 玩家所在城市 ID
+
+// GameConfig
+cityId: string;   // 开局所选城市，传入 SETUP_GAME
+```
+
+#### 4.5.5 financial.ts 城市工具函数
+
+```typescript
+/** 城市生活成本乘数 */
+export function getCityExpenseMultiplier(cityId?: string): number {
+  return getCityById(cityId).expenseMultiplier;
+}
+
+/** 城市房产持有税率（年化小数） */
+export function getCityPropertyTaxRate(cityId?: string): number {
+  return getCityById(cityId).propertyTaxRate;
+}
+
+/** 根据城市与套数计算首付比例 */
+export function getDownPaymentRate(city: City, isSecondHome: boolean, isCommercial = false): number {
+  if (isCommercial) return 0.5;
+  return isSecondHome ? city.downPaymentSecond : city.downPaymentFirst;
+}
+
+/** 多套房产持有税（第 2 套起，按玩家城市税率） */
+export function getPropertyTax(player: Player): number {
+  const realEstateCount = player.assets.filter((a) => a.type === 'realEstate').length;
+  if (realEstateCount < 2) return 0;
+  const rate = getCityPropertyTaxRate(player.cityId);
+  const extraProperties = player.assets.filter((a) => a.type === 'realEstate').slice(1);
+  return extraProperties.reduce((sum, a) => sum + Math.round((a.marketValue * rate) / 12), 0);
+}
+```
 
 ---
 
@@ -463,13 +569,13 @@ export const PROFESSIONS: Profession[] = [
 
 | 格子类型 | 数量 | 标识色 | 说明 |
 |----------|------|--------|------|
-| **Payday** 发工资 | 4 | 绿色 | 经过时获得月工资 = 工资 + 月现金流 |
-| **Opportunity** 机会 | 6 | 蓝色 | 抽取机会卡（小生意或大买卖） |
-| **Market** 市场 | 4 | 黄色 | 抽取市场卡，影响所有玩家或当前玩家 |
-| **Doodad** 额外支出 | 4 | 红色 | 意外消费，直接减少现金或增加支出 |
-| **Charity** 慈善 | 1 | 紫色 | 可选择捐款，获得未来掷双骰子权利 |
-| **Baby** 生孩子 | 1 | 粉色 | 增加一个孩子，每月支出增加 |
-| **Settlement** 结算 | 4 | 灰色 | 交税或银行结算，通常直接扣税 |
+| **Payday** 发工资 | 4 | 绿色 | 获得月工资；负债 `paidPeriods +1` |
+| **Opportunity** 机会 | 6 | 蓝色 | 抽取机会卡 |
+| **Market** 市场 | 4 | 黄色 | 抽取市场卡 |
+| **Doodad** 额外支出 | 4 | 红色 | 意外消费 |
+| **Charity** 慈善 | 1 | 紫色 | 可选捐款，获双骰子权利 |
+| **Baby** 生孩子 | 1 | 粉色 | **【调整】** 玩家选择是否生育 |
+| **Settlement** 结算 | 4 | 灰色 | 交税；持有 ≥2 套房产扣持有税 |
 
 合计：4 + 6 + 4 + 4 + 1 + 1 + 4 = **24 格**
 
@@ -491,7 +597,7 @@ export const PROFESSIONS: Profession[] = [
 | 12 | Payday | 发工资日 |
 | 13 | Market | 市场波动 |
 | 14 | Opportunity | 大买卖机会 |
-| 15 | Baby | 生孩子 |
+| 15 | Baby | 生育选择 |
 | 16 | Settlement | 税务结算 |
 | 17 | Doodad | 额外支出 |
 | 18 | Market | 市场波动 |
@@ -527,30 +633,8 @@ export const PROFESSIONS: Profession[] = [
 ```typescript
 // src/data/boardLayout.ts
 export const SPACES: Space[] = [
-  { id: 0, type: 'payday', name: '发工资日', description: '领取本月工资与现金流。' },
-  { id: 1, type: 'opportunity', name: '小生意机会', description: '抽取一张机会卡。' },
-  { id: 2, type: 'doodad', name: '额外支出', description: '生活总有意外开销。' },
-  { id: 3, type: 'market', name: '市场波动', description: '市场发生变化。' },
-  { id: 4, type: 'payday', name: '发工资日', description: '领取本月工资与现金流。' },
-  { id: 5, type: 'opportunity', name: '大买卖机会', description: '抽取一张机会卡。' },
-  { id: 6, type: 'doodad', name: '额外支出', description: '生活总有意外开销。' },
-  { id: 7, type: 'charity', name: '慈善捐款', description: '捐款可换取未来掷双骰子的机会。' },
-  { id: 8, type: 'settlement', name: '税务结算', description: '缴纳本月税款。' },
-  { id: 9, type: 'opportunity', name: '小生意机会', description: '抽取一张机会卡。' },
-  { id: 10, type: 'doodad', name: '额外支出', description: '生活总有意外开销。' },
-  { id: 11, type: 'payday', name: '发工资日', description: '领取本月工资与现金流。' },
-  { id: 12, type: 'market', name: '市场波动', description: '市场发生变化。' },
-  { id: 13, type: 'opportunity', name: '大买卖机会', description: '抽取一张机会卡。' },
-  { id: 14, type: 'baby', name: '生孩子', description: '家里添丁，支出增加。' },
-  { id: 15, type: 'settlement', name: '税务结算', description: '缴纳本月税款。' },
-  { id: 16, type: 'doodad', name: '额外支出', description: '生活总有意外开销。' },
-  { id: 17, type: 'market', name: '市场波动', description: '市场发生变化。' },
-  { id: 18, type: 'payday', name: '发工资日', description: '领取本月工资与现金流。' },
-  { id: 19, type: 'opportunity', name: '小生意机会', description: '抽取一张机会卡。' },
-  { id: 20, type: 'settlement', name: '税务结算', description: '缴纳本月税款。' },
-  { id: 21, type: 'market', name: '市场波动', description: '市场发生变化。' },
-  { id: 22, type: 'opportunity', name: '大买卖机会', description: '抽取一张机会卡。' },
-  { id: 23, type: 'settlement', name: '年度结算', description: '年度财务结算。' },
+  { id: 0, type: 'payday', name: '发工资日', description: '领取本月工资与现金流，负债计期 +1。' },
+  // ... 共 24 格
 ];
 ```
 
@@ -558,29 +642,50 @@ export const SPACES: Space[] = [
 
 #### 5.6.1 Payday（发工资）
 
-触发时机：
-- 玩家移动到 Payday 格
-- 玩家经过起点（格 0）时
+触发时机：移动到 Payday 格；经过起点（格 0）时。
 
-获得金额：
 ```
 月现金流 = 工资 + 被动收入 - 总支出
 发工资获得 = 月现金流
 ```
 
-如果现金流为负，则现金减少，可能触发破产检查。
+每次 Payday 结算后，该玩家所有 `liabilities` 的 `paidPeriods += 1`。若月现金流为负，立即触发游戏失败判定。
 
 #### 5.6.2 Settlement（结算）
 
-玩家停留时缴纳当月税款。税款已在 `expenses.tax` 中定义，缴纳时从现金中扣除，不产生额外支出（仅在 Payday 之外再次扣税一次，象征税务检查）。
+玩家停留时缴纳当月税款；持有 ≥2 套房产时，按 **玩家城市** `propertyTaxRate` 计算持有税（`getPropertyTax`）。
 
-#### 5.6.3 Baby（生孩子）
+#### 5.6.3 【调整】Baby（生育选择）
 
-玩家停留时增加 1 个孩子。每月支出增加 `expenses.perChild` 金额。 children 上限为 3 个。
+v3.0 不再强制生育，改为玩家主动决策：
+
+1. 移动到 Baby 格 → 进入 `CARD_DECISION` 阶段
+2. CardModal 展示「👶 生育计划」弹窗
+3. 玩家选择：
+   - **生孩子** → `dispatch CHOOSE_BABY { haveBaby: true }` → `children +1`，月支出 + `perChild`
+   - **暂不生育** → `dispatch CHOOSE_BABY { haveBaby: false }` → **无任何惩罚**
+4. 孩子上限 3；已达上限时「生孩子」按钮禁用
+5. 选择后检查月现金流（生孩子可能导致失败）
+
+```typescript
+// src/context/GameReducer.ts
+case 'CHOOSE_BABY': {
+  if (!action.payload.haveBaby) {
+    return addLog(state, player.id, `${player.name} 选择暂不生育`, 'system');
+  }
+  if (player.children >= CHILDREN_LIMIT) { /* 日志提示 */ }
+  // children +1, checkBankruptcy
+}
+
+// src/components/CardModal/CardModal.tsx — Baby 弹窗
+<button onClick={() => actions.chooseBaby(true)}>生孩子</button>
+<button onClick={() => actions.chooseBaby(false)}>暂不生育</button>
+<p>选择「暂不生育」无任何惩罚。</p>
+```
 
 #### 5.6.4 Charity（慈善）
 
-玩家选择是否捐款月收入的 10%。如果捐款，获得 3 回合的"双骰子"权利（每次掷两个骰子，任选其一）。
+捐款月收入的 10%，获得 3 回合双骰子权利。
 
 ---
 
@@ -588,339 +693,166 @@ export const SPACES: Space[] = [
 
 ### 6.1 卡片设计原则
 
-- 小生意卡：首付低（¥100 - ¥10,000），现金流小，适合早期积累
-- 大买卖卡：首付高（¥20,000+），现金流大，适合后期质变
-- 市场卡：制造买卖时机，让资产可以高价卖出或低价买入
-- 额外支出卡：制造现金压力，防止玩家无脑投资
+- 小生意卡：首付 ¥500–¥50,000，覆盖 26 子类中的入门级标的
+- 大买卖卡：首付 ¥50,000+，需满足 `minNetWorth` 门槛
+- 市场卡：**差异化宏观事件**，优先 `assetImpacts` 按类型/板块影响
+- 额外支出卡：**2026 真实消费场景**
+- **【调整】** 房产/车辆机会卡带 `metadata.cityTier`，展示时按玩家城市缩放
 
-### 6.2 机会卡数据结构
+### 6.2 【调整】房产/车辆按城市缩放
+
+机会卡中资产价格为 **卡片基准城市（cityTier）** 下的数值。玩家查看/购买时，经 `scaleAssetByPlayerCity` 换算为玩家所在城市价格：
+
+```typescript
+// src/utils/financial.ts
+export function scaleAssetByPlayerCity(asset: Asset, cityId: string): Asset {
+  if (asset.type !== 'realEstate' && asset.metadata?.sector !== '汽车') return asset;
+
+  const city = getCityById(cityId);
+  const cardTier = asset.metadata?.cityTier;
+
+  // 商业地产：按城市生活成本缩放
+  if (cardTier === 'commercial') {
+    const mult = city.expenseMultiplier;
+    return applyCityTierDownPayment({
+      ...asset,
+      cost: Math.round(asset.cost * mult),
+      marketValue: Math.round(asset.marketValue * mult),
+      cashFlow: Math.round(asset.cashFlow * mult),
+    }, cityId);
+  }
+
+  // 住宅/车辆：playerMult / cardBaseMult
+  const tierKey = cardTier ?? 'tier2';
+  const cardBaseMult = CITY_TIER_PRICE_MULTIPLIER[tierKey] ?? 1;
+  const playerMult = CITY_TIER_PRICE_MULTIPLIER[city.tier] ?? 1;
+  const scale = playerMult / cardBaseMult;
+
+  const scaled = {
+    ...asset,
+    cost: Math.round(asset.cost * scale),
+    marketValue: Math.round(asset.marketValue * scale),
+    cashFlow: Math.round(asset.cashFlow * scale),
+  };
+  return applyCityTierDownPayment(scaled, cityId);
+}
+
+// 购买入口
+export function getOpportunityAsset(card: OpportunityCard, player?: Player): Asset {
+  let asset = card.asset;
+  if (player?.cityId) {
+    asset = scaleAssetByPlayerCity(asset, player.cityId);
+  }
+  return applyCityTierDownPayment(asset, player?.cityId);
+}
+```
+
+**缩放示例**：卡片 `cityTier: 'tier2'` 标价 ¥280 万，玩家在 **上海（tier1）** 购买：
+
+```
+scale = 2.8 / 1.0 = 2.8
+实际 cost = 280万 × 2.8 = 784万
+首付 = cost × city.downPaymentFirst（上海 30%）
+```
+
+### 6.3 房地产机会卡参数（基准 tier2）
+
+| cityTier | 代表标的 | 基准总价 | 基准首付 | 基准月租 | debtType |
+|----------|----------|----------|----------|----------|----------|
+| tier4 | 县城两居室 | ¥126,000 | 15% | ¥504 | houseFirst |
+| tier3 | 三线刚需 | ¥450,000 | 20% | ¥1,800 | houseFirst |
+| tier2 | 杭州刚需 100㎡ | ¥2,800,000 | 25% | ¥6,500 | houseFirst |
+| tier1 | 上海内环 80㎡ | ¥6,500,000 | 30% | ¥15,000 | houseSecond* |
+| commercial | 社区底商 60㎡ | ¥1,200,000 | 50% | ¥8,000 | shopMortgage |
+
+\* 玩家已有 1 套住宅时再购，自动切换 `houseSecond`
+
+购买房产时自动创建 EPI 按揭负债（`createLiability` + `getRealEstateMortgageDebtType`）。
+
+### 6.4 机会卡样本
 
 ```typescript
 // src/data/opportunityCards.ts
-export const OPPORTUNITY_CARDS: OpportunityCard[] = [
-  // 小生意
-  {
-    id: 'stock_myt4u',
-    title: 'MYT4U 股票',
-    description: '一家科技公司的股票，每股 ¥10。',
-    type: 'opportunity',
-    kind: 'smallDeal',
-    asset: {
-      id: 'stock_myt4u_1',
-      name: 'MYT4U 股票',
-      type: 'stock',
-      cost: 10,
-      downPayment: 10,
-      cashFlow: 0,
-      mortgage: 0,
-      marketValue: 10,
-      shares: 1,
-    },
+{
+  id: 're_tier3_apt',
+  title: '三线刚需房',
+  type: 'opportunity', kind: 'smallDeal',
+  asset: {
+    id: 're_tier3_1', name: '三线刚需 89㎡', type: 'realEstate',
+    cost: 450000, downPayment: 90000, cashFlow: -2025, mortgage: 360000, marketValue: 450000,
+    metadata: { cityTier: 'tier3', subCategory: 'tier3', liquidity: 'illiquid', incomeType: 'rent' },
   },
-  {
-    id: 'apt_small_1',
-    title: '小型公寓',
-    description: '一套可以出租的小型公寓。',
-    type: 'opportunity',
-    kind: 'smallDeal',
-    asset: {
-      id: 'apt_small_1',
-      name: '小型公寓',
-      type: 'realEstate',
-      cost: 45000,
-      downPayment: 5000,
-      cashFlow: 400,
-      mortgage: 40000,
-      marketValue: 45000,
-    },
+},
+{
+  id: 're_tier1_core',
+  title: '一线核心资产',
+  type: 'opportunity', kind: 'bigDeal',
+  minNetWorth: 3000000,
+  asset: {
+    id: 're_tier1_1', name: '一线内环公寓', type: 'realEstate',
+    cost: 6500000, downPayment: 1950000, cashFlow: -23500, mortgage: 4550000, marketValue: 6500000,
+    metadata: { cityTier: 'tier1', riskLevel: 'high' },
   },
-  {
-    id: 'land_invest',
-    title: '城市边缘土地',
-    description: '一块等待开发的土地，当前无现金流，但升值潜力大。',
-    type: 'opportunity',
-    kind: 'smallDeal',
-    asset: {
-      id: 'land_invest',
-      name: '城市边缘土地',
-      type: 'realEstate',
-      cost: 18000,
-      downPayment: 3000,
-      cashFlow: 0,
-      mortgage: 15000,
-      marketValue: 18000,
-    },
-  },
-  {
-    id: 'shop_secondhand',
-    title: '二手商铺',
-    description: '一家位置不错的二手商铺，租金稳定。',
-    type: 'opportunity',
-    kind: 'smallDeal',
-    asset: {
-      id: 'shop_secondhand',
-      name: '二手商铺',
-      type: 'realEstate',
-      cost: 60000,
-      downPayment: 8000,
-      cashFlow: 600,
-      mortgage: 52000,
-      marketValue: 60000,
-    },
-  },
-  {
-    id: 'royalty_book',
-    title: '畅销书版权',
-    description: '购买一本潜力畅销书的版权，持续获得版税。',
-    type: 'opportunity',
-    kind: 'smallDeal',
-    asset: {
-      id: 'royalty_book',
-      name: '畅销书版权',
-      type: 'intellectual',
-      cost: 10000,
-      downPayment: 2000,
-      cashFlow: 150,
-      mortgage: 8000,
-      marketValue: 10000,
-    },
-  },
-  {
-    id: 'franchise_small',
-    title: '小型连锁加盟',
-    description: '加盟一家知名小吃品牌。',
-    type: 'opportunity',
-    kind: 'smallDeal',
-    asset: {
-      id: 'franchise_small',
-      name: '小型连锁加盟',
-      type: 'business',
-      cost: 30000,
-      downPayment: 7000,
-      cashFlow: 500,
-      mortgage: 23000,
-      marketValue: 30000,
-    },
-  },
-  // 大买卖
-  {
-    id: 'apt_building_8',
-    title: '8 套公寓楼',
-    description: '一栋拥有 8 套公寓的住宅楼，现金流可观。',
-    type: 'opportunity',
-    kind: 'bigDeal',
-    asset: {
-      id: 'apt_building_8',
-      name: '8 套公寓楼',
-      type: 'realEstate',
-      cost: 200000,
-      downPayment: 40000,
-      cashFlow: 3600,
-      mortgage: 160000,
-      marketValue: 200000,
-    },
-  },
-  {
-    id: 'mall_shopping',
-    title: '社区购物中心',
-    description: '一个稳定的社区购物中心。',
-    type: 'opportunity',
-    kind: 'bigDeal',
-    asset: {
-      id: 'mall_shopping',
-      name: '社区购物中心',
-      type: 'realEstate',
-      cost: 400000,
-      downPayment: 65000,
-      cashFlow: 8000,
-      mortgage: 335000,
-      marketValue: 400000,
-    },
-  },
-  {
-    id: 'car_wash_auto',
-    title: '自动化洗车房',
-    description: '一家全自动运营的洗车房。',
-    type: 'opportunity',
-    kind: 'bigDeal',
-    asset: {
-      id: 'car_wash_auto',
-      name: '自动化洗车房',
-      type: 'business',
-      cost: 150000,
-      downPayment: 50000,
-      cashFlow: 5000,
-      mortgage: 100000,
-      marketValue: 150000,
-    },
-  },
-  {
-    id: 'hotel_chain',
-    title: '连锁酒店加盟',
-    description: '加盟一家知名连锁酒店，收益高但需大资金。',
-    type: 'opportunity',
-    kind: 'bigDeal',
-    asset: {
-      id: 'hotel_chain',
-      name: '连锁酒店加盟',
-      type: 'business',
-      cost: 500000,
-      downPayment: 80000,
-      cashFlow: 10000,
-      mortgage: 420000,
-      marketValue: 500000,
-    },
-  },
-  {
-    id: 'vc_fund',
-    title: '初创企业风投',
-    description: '投资一支初创企业基金，风险较高但回报可观。',
-    type: 'opportunity',
-    kind: 'bigDeal',
-    asset: {
-      id: 'vc_fund',
-      name: '初创企业风投',
-      type: 'business',
-      cost: 100000,
-      downPayment: 30000,
-      cashFlow: 1500,
-      mortgage: 70000,
-      marketValue: 100000,
-    },
-  },
-];
+},
 ```
 
-### 6.3 市场卡数据结构
+### 6.5 市场卡机制
+
+| 效果类型 | 触发 | 实现 |
+|----------|------|------|
+| `macroEvent` | `APPLY_MARKET_EFFECT` | 遍历 `assetImpacts`，更新乘数 |
+| `interestRate` | 同上 | 更新 `interestRate`；重算房贷类 EPI 月供 |
+| `buyout` | 选资产 → `SELL_ASSET` | 溢价收购 |
+| `discount` | `DRAW_DISCOUNTED_OPPORTUNITY` | 抽房产，首付 × discountRate，**仍经城市缩放** |
+
+### 6.6 宏观事件卡样本
 
 ```typescript
 // src/data/marketCards.ts
-export const MARKET_CARDS: MarketCard[] = [
-  {
-    id: 'market_boom',
-    title: '经济繁荣',
-    description: '房地产市场火热，所有房产增值 50%，买家求购。',
-    type: 'market',
-    effect: { type: 'assetAppreciation', targetAssetType: 'realEstate', multiplier: 1.5 },
+{
+  id: 'macro_2008_subprime',
+  title: '2008 次贷危机',
+  effect: {
+    type: 'macroEvent', eventCategory: 'economicCycle',
+    assetImpacts: {
+      realEstate: { priceChange: -0.35, cashFlowChange: -0.20 },
+      stock:      { priceChange: -0.40, cashFlowChange: -0.30 },
+      bond:       { priceChange:  0.05, cashFlowChange:  0.00 },
+    },
+    rateChange: 0.02,
   },
-  {
-    id: 'market_rate_cut',
-    title: '央行降息',
-    description: '贷款利率下调，所有月供减少 20%（持续 3 回合）。',
-    type: 'market',
-    effect: { type: 'interestRate', rateChange: -0.02 },
+},
+{
+  id: 'macro_property_recovery',
+  title: '楼市复苏',
+  effect: {
+    type: 'macroEvent',
+    assetImpacts: {
+      realEstate: { priceChange: 0.25 },
+      'tier1':    { priceChange: 0.35 },
+      'tier3':    { priceChange: 0.10 },
+    },
   },
-  {
-    id: 'market_recession',
-    title: '经济衰退',
-    description: '资产贬值 30%，现金流减少 20%。',
-    type: 'market',
-    effect: { type: 'assetDepreciation', multiplier: 0.7 },
-  },
-  {
-    id: 'market_tech_boom',
-    title: '科技行业利好',
-    description: '科技股翻倍，手中股票价值 ×2。',
-    type: 'market',
-    effect: { type: 'sectorBoom', sector: 'stock', multiplier: 2 },
-  },
-  {
-    id: 'market_buyout',
-    title: '资产收购要约',
-    description: '有买家以 2 倍价格收购你的房产类资产。',
-    type: 'market',
-    effect: { type: 'buyout', targetAssetType: 'realEstate', multiplier: 2 },
-  },
-  {
-    id: 'market_buyers_market',
-    title: '买方市场',
-    description: '房东急于出售，房产首付降至 5 折。',
-    type: 'market',
-    effect: { type: 'discount', targetAssetType: 'realEstate', discountRate: 0.5 },
-  },
-];
+},
 ```
 
-### 6.4 额外支出卡数据结构
+### 6.7 额外支出卡样本
 
 ```typescript
 // src/data/doodadCards.ts
 export const DOODAD_CARDS: DoodadCard[] = [
-  {
-    id: 'doodad_tv',
-    title: '买新电视',
-    description: '你冲动消费买了一台大屏幕电视。',
-    type: 'doodad',
-    cost: 1000,
-    isRecurring: false,
-  },
-  {
-    id: 'doodad_vacation',
-    title: '海边度假',
-    description: '全家去海边度了个短假。',
-    type: 'doodad',
-    cost: 2500,
-    isRecurring: false,
-  },
-  {
-    id: 'doodad_dinner',
-    title: '请客吃饭',
-    description: '请朋友吃了一顿大餐。',
-    type: 'doodad',
-    cost: 400,
-    isRecurring: false,
-  },
-  {
-    id: 'doodad_phone',
-    title: '换新手机',
-    description: '最新款手机上市，你忍不住剁手。',
-    type: 'doodad',
-    cost: 1500,
-    isRecurring: false,
-  },
-  {
-    id: 'doodad_pet',
-    title: '宠物医疗',
-    description: '宠物生病，支付了医疗费用。',
-    type: 'doodad',
-    cost: 2000,
-    isRecurring: false,
-  },
-  {
-    id: 'doodad_gym',
-    title: '健身房会员',
-    description: '你办了健身年卡，每月多一笔支出。',
-    type: 'doodad',
-    cost: 600,
-    isRecurring: true,
-    monthlyCost: 100,
-  },
-  {
-    id: 'doodad_course',
-    title: '付费课程',
-    description: '报名了一个在线提升课程。',
-    type: 'doodad',
-    cost: 800,
-    isRecurring: false,
-  },
-  {
-    id: 'doodad_car_repair',
-    title: '汽车维修',
-    description: '车坏了，维修费用不菲。',
-    type: 'doodad',
-    cost: 3000,
-    isRecurring: false,
-  },
+  { id: 'doodad_iphone', title: 'iPhone 17 Pro', cost: 9999, isRecurring: false },
+  { id: 'doodad_pet_surgery', title: '宠物手术', cost: 6800, isRecurring: false },
+  { id: 'doodad_streaming', title: '视频会员全家桶', cost: 1200, isRecurring: true, monthlyCost: 100 },
+  { id: 'doodad_child_tutor', title: '孩子补习班', cost: 15000, isRecurring: true, monthlyCost: 2500 },
 ];
 ```
 
-### 6.5 卡组管理
+### 6.8 卡组管理
 
-- 游戏开始时，将每种卡片分别洗牌
-- 抽卡后放到底部，直到整副牌抽完后再重新洗牌
-- 市场卡抽到后立即执行，部分效果需要玩家确认
-- 机会卡抽到后玩家可以选择是否投资
-- 额外支出卡抽到后必须支付（现金不足则贷款，否则破产）
+- 游戏开始时洗牌；抽完重洗
+- 机会卡展示/购买前调用 `getOpportunityAsset(card, player)` 做城市缩放
+- 额外支出：现金不足自动贷款；支付后检查月现金流
 
 ---
 
@@ -928,103 +860,255 @@ export const DOODAD_CARDS: DoodadCard[] = [
 
 ### 7.1 财务报表计算
 
+**【调整】** v3.0 总支出公式：**负债月供 + 非负债固定支出**，避免与 `expenses.mortgage` 等遗留字段重复计算。
+
 ```typescript
 // src/utils/financial.ts
 
-export function getPassiveIncome(player: Player): number {
-  return player.assets.reduce((sum, asset) => sum + asset.cashFlow, 0);
+/** 非负债固定支出 + 全部负债月供 */
+export function getFixedExpenses(player: Player): number {
+  const liabilityPayments = player.liabilities.reduce((sum, l) => sum + l.monthlyPayment, 0);
+  const nonDebtFixed =
+    player.expenses.tax +
+    player.expenses.other +
+    player.children * player.expenses.perChild +
+    getPropertyTax(player);
+  return liabilityPayments + nonDebtFixed;
 }
 
 export function getTotalExpenses(player: Player): number {
-  const base = player.expenses.tax +
-    player.expenses.mortgage +
-    player.expenses.studentLoan +
-    player.expenses.carLoan +
-    player.expenses.creditCard +
-    player.expenses.other;
-  const childExpenses = player.children * player.expenses.perChild;
-  return base + childExpenses;
+  return getFixedExpenses(player);
 }
 
-export function getMonthlyCashFlow(player: Player): number {
-  return player.salary + getPassiveIncome(player) - getTotalExpenses(player);
-}
-
-export function getNetWorth(player: Player): number {
-  const assetsValue = player.assets.reduce((sum, a) => sum + a.marketValue, 0) + player.cash;
-  const liabilitiesValue = player.liabilities.reduce((sum, l) => sum + l.principal, 0);
-  return assetsValue - liabilitiesValue;
-}
-
-export function canAffordDownPayment(player: Player, asset: Asset): boolean {
-  return player.cash >= asset.downPayment;
-}
-
-export function checkBankruptcy(player: Player): boolean {
-  return player.cash < 0 && getMonthlyCashFlow(player) <= 0;
+export function getMonthlyCashFlow(player: Player, cashFlowMultiplier?, sectorMultiplier?): number {
+  return player.salary + getPassiveIncome(player, cashFlowMultiplier, sectorMultiplier) - getTotalExpenses(player);
 }
 ```
 
-### 7.2 资产购买流程
+> **注意**：`expenses.mortgage / carLoan / creditCard / studentLoan` 在 v3.0 开局时置 0；职业初始负债月供仅通过 `liabilities[].monthlyPayment` 计入。`REPAY_LIABILITY` 对 `source === 'profession'` 的负债仍会同步减少对应 expenses 字段（兼容旧存档展示）。
 
-```
-1. 玩家抽到机会卡，显示资产信息
-2. 如果现金 >= 首付，可以选择购买
-3. 购买后：
-   - 现金 -= 首付
-   - 资产加入 assets 列表
-   - 如果资产 mortgage > 0，增加一笔负债（月供 = mortgage × 月利率）
-4. 如果现金不足，可以选择向银行贷款（额度见 7.4）
-5. 玩家也可以选择放弃该机会
-```
+### 7.2 债务体系设计目标
 
-### 7.3 资产卖出流程
-
-```
-1. 市场卡触发卖出机会，或玩家主动选择卖出
-2. 卖出价格 = asset.marketValue × marketMultiplier
-3. 卖出后：
-   - 现金 += 卖出价格 - 剩余贷款（如有）
-   - 从 assets 中移除该资产
-   - 如有对应 mortgage 的负债，一并清除
-4. 如果市场卡要求强制卖出，玩家可选择卖出哪一项
-```
-
-### 7.4 银行贷款机制
-
-| 项目 | 规则 |
+| 目标 | 说明 |
 |------|------|
-| 贷款额度 | 月现金流 × 10（最低 ¥5,000） |
-| 利率 | 月利率 1%（年利率 12%） |
-| 还款方式 | 每月自动从现金流中扣利息，玩家可随时还款本金 |
-| 贷款用途 | 投资首付、支付额外支出、度过现金危机 |
-| 上限 | 当前贷款余额不得超过月现金流 × 10 |
+| 真实感 | 7 类信贷产品，EPI 月供贴近现实 |
+| 策略深度 | 高息先还；提前还款降低 EPI 月供 |
+| 与资产联动 | 购房自动绑定 `debtType` |
+| 教育意义 | 贷款周转 ≠ 改善月现金流 |
 
-贷款数据结构：
+### 7.3 负债来源
+
+| 来源 | source | 计入 liabilities 月供？ |
+|------|--------|--------------------------|
+| 职业初始 | `profession` | 是 |
+| 购买资产按揭 | `game` | 是 |
+| TAKE_LOAN 银行贷款 | `game` | 是（仅付息） |
+
+### 7.4 REPAY_LIABILITY 完整逻辑
+
 ```typescript
-export interface BankLoan {
-  principal: number;
-  monthlyInterest: number;
+// src/context/GameReducer.ts
+case 'REPAY_LIABILITY': {
+  const { liabilityId, amount } = action.payload;
+  const liability = player.liabilities.find((l) => l.id === liabilityId);
+  const debtType = inferDebtTypeFromLiability(liability);
+
+  const repayAmount = Math.min(amount, liability.principal);
+  const penalty = calcPrepaymentPenalty(debtType, liability.principal, liability.paidPeriods ?? 0);
+  const totalCost = repayAmount + penalty;
+
+  const oldPayment = liability.monthlyPayment;
+  const newPrincipal = liability.principal - repayAmount;
+
+  // 【v3.0 核心】部分还款后重算 EPI 月供
+  const newPayment = newPrincipal > 0
+    ? calcLiabilityMonthlyPayment(newPrincipal, debtType, liability.totalLoanMonth)
+    : 0;
+
+  // 更新 liabilities；同步 profession 负债的 expenses 展示字段
+  const paymentReduction = oldPayment - newPayment;
+  // ...
+  return checkAndHandleBankruptcy(newState);
 }
 ```
 
-### 7.5 破产处理
+**流程**：
 
-当玩家现金为负且月现金流 ≤ 0 时，判定为破产：
+```
+打开 RepayModal → 选择负债 → 输入金额
+  → previewRepayment 预览：违约金、新月供、新月现金流
+  → 确认 REPAY_LIABILITY
+  → principal -= repayAmount
+  → 若 principal > 0：monthlyPayment = calcLiabilityMonthlyPayment(新本金)
+  → 若 principal = 0：移除负债
+  → checkBankruptcy
+```
 
-1. 系统强制卖出可流动资产（股票优先，其次房产）
-2. 如果卖出后仍无法弥补赤字，玩家宣布破产
-3. 破产玩家退出游戏，其余玩家继续
-
-### 7.6 财务自由判定
+### 7.5 TAKE_LOAN
 
 ```typescript
-export function checkFinancialFreedom(player: Player): boolean {
-  return getPassiveIncome(player) > getTotalExpenses(player);
+case 'TAKE_LOAN': {
+  liabilities.push({
+    ...createLiability({
+      name: '银行贷款',
+      principal: amount,
+      debtType: 'bankBusinessLoan',
+      source: 'game',
+    }),
+  });
+  // monthlyPayment = principal × 1%（仅付息）
 }
 ```
 
-一旦满足条件，玩家在 Payday 后跳出老鼠赛跑，进入快车道。
+### 7.6 资产购买 / 卖出
+
+**购买**：
+1. `getOpportunityAsset(card, player)` 城市缩放 + 首付计算
+2. 现金 ≥ 首付（含交易费）→ 购买
+3. `mortgage > 0` → `createLiability`（EPI 月供）
+4. 已有 1 套住宅 → `houseSecond`
+5. 现金不足 → 自动 `TAKE_LOAN`
+
+**卖出**：卖出价 − 交易费；若有按揭，剩余本金从 proceeds 扣除。
+
+### 7.7 游戏失败与财务自由
+
+| 判定 | 条件 | 触发时机 |
+|------|------|----------|
+| 失败 | 月现金流 < 0 | 购买、还款、支出、生育、Settlement 后 |
+| 财务自由 | 被动收入 > 总支出 | Payday 检查 |
+
+### 7.8 【替换】分层信贷负债与等额本息还款系统
+
+v3.0 **替换** v2.0 的简化利息模型，全部分期类债务采用 **等额本息（EPI）** 计算月供。
+
+#### 7.8.1 EPI 月供公式
+
+```typescript
+/** 【v3.0】等额本息月供 */
+export function calcEqualPrincipalInterestPayment(
+  principal: number,
+  monthRate: number,
+  totalMonth: number
+): number {
+  if (principal <= 0) return 0;
+  if (totalMonth <= 0) return Math.round(principal * monthRate);
+  if (monthRate === 0) return Math.round(principal / totalMonth);
+  const factor = Math.pow(1 + monthRate, totalMonth);
+  const payment = (principal * monthRate * factor) / (factor - 1);
+  return Math.round(payment);
+}
+
+/** 根据债务类型计算月供（EPI 或仅付息） */
+export function calcLiabilityMonthlyPayment(
+  principal: number,
+  debtType: DebtType,
+  totalLoanMonth?: number
+): number {
+  const config = getDebtTypeConfig(debtType);
+  if (config.interestOnly) {
+    return Math.round(principal * config.monthlyRate);  // bankBusinessLoan
+  }
+  const months = totalLoanMonth ?? config.totalLoanMonth ?? 360;
+  return calcEqualPrincipalInterestPayment(principal, config.monthlyRate, months);
+}
+```
+
+**公式说明**：
+
+```
+月供 PMT = P × r × (1+r)^n / ((1+r)^n - 1)
+
+P  = 剩余本金 (principal)
+r  = 月利率 (monthRate)
+n  = 剩余期数 (totalLoanMonth，简化模型中部分还款不缩期)
+```
+
+#### 7.8.2 七类债务 EPI 条款
+
+| debtType | 年化 | 月利率 | EPI 期数 | 提前还款违约金 |
+|----------|------|--------|----------|----------------|
+| creditCard | 18% | 1.5% | **24** | 无 |
+| consumerLoan | 9.6% | 0.8% | **36** | paidPeriods < 12 → 剩余本金 × 3% |
+| carLoan | 4.2% | 0.35% | **60** | paidPeriods < 12 → 2%；≥12 免罚 |
+| houseFirst | 3% | 0.25% | **360** | paidPeriods < 12 → 1%；≥12 免罚 |
+| houseSecond | 4% | 0.33% | **360** | 始终 1% |
+| shopMortgage | 5.04% | 0.42% | **240** | 始终 2% |
+| bankBusinessLoan | 12% | 1.0% | — | 仅付息，无违约金 |
+
+> **【调整】** v3.0 修正 v2.0 错误：houseFirst 免罚期为 **12 期（1 年）**，非 60 期（5 年）。
+
+#### 7.8.3 提前还款违约金计算
+
+```typescript
+export function calcPrepaymentPenalty(
+  debtType: DebtType,
+  remainingPrincipal: number,
+  paidPeriods: number
+): number {
+  const config = getDebtTypeConfig(debtType);
+
+  if (config.alwaysPenaltyRate) {
+    return Math.round(remainingPrincipal * config.alwaysPenaltyRate);
+  }
+  if (config.penaltyIfBeforePeriods && paidPeriods < config.penaltyBeforePeriods!) {
+    return Math.round(remainingPrincipal * config.penaltyIfBeforePeriods);
+  }
+  if (config.freePrepayAfterPeriods && paidPeriods < config.freePrepayAfterPeriods) {
+    return Math.round(remainingPrincipal * (config.penaltyRate ?? 0));
+  }
+  return 0;
+}
+```
+
+#### 7.8.4 REPAY_LIABILITY 重算月供
+
+部分还款后，**保持原 totalLoanMonth 不变**，以新本金重新计算 EPI 月供：
+
+```typescript
+const newPayment = newPrincipal > 0
+  ? calcLiabilityMonthlyPayment(newPrincipal, debtType, liability.totalLoanMonth)
+  : 0;
+```
+
+示例：首套房贷剩余本金 ¥500,000，月利率 0.25%，360 期 → 月供约 ¥2,108；提前还 ¥100,000 后，以 ¥400,000 重算 → 月供约 ¥1,686。
+
+#### 7.8.5 getTotalExpenses 不重复计算
+
+```typescript
+// ✅ v3.0 正确：负债月供 + 固定支出（不含 expenses.mortgage）
+export function getFixedExpenses(player: Player): number {
+  const liabilityPayments = player.liabilities.reduce((sum, l) => sum + l.monthlyPayment, 0);
+  const nonDebtFixed =
+    player.expenses.tax +
+    player.expenses.other +
+    player.children * player.expenses.perChild +
+    getPropertyTax(player);
+  return liabilityPayments + nonDebtFixed;
+}
+
+// ❌ v2.0 错误模式（已废弃）：getFixedExpenses 含 expenses.mortgage + getLiabilityPayments → 双重计算
+```
+
+#### 7.8.6 债务优先级（AI / 玩家策略）
+
+| 优先级 | debtType | 年化 | 理由 |
+|--------|----------|------|------|
+| 1 | creditCard | 18% | 最高息，无违约金 |
+| 2 | bankBusinessLoan | 12% | 纯利息 |
+| 3 | consumerLoan | 9.6% | 注意 12 期内 3% 违约金 |
+| 4 | shopMortgage | 5.04% | 始终 2% 违约金 |
+| 5 | carLoan | 4.2% | 12 期后免罚 |
+| 6 | houseSecond | 4% | 1% 违约金 |
+| 7 | houseFirst | 3% | 12 期后免罚，最低优先还 |
+
+### 7.9 房产税规则
+
+| 条件 | 月持有税 |
+|------|----------|
+| 持有 0–1 套 realEstate | ¥0 |
+| 第 2 套起 | 每套 `marketValue × city.propertyTaxRate / 12` |
+| 计入 | `getPropertyTax(player)`，合入 `getTotalExpenses` |
 
 ---
 
@@ -1033,74 +1117,64 @@ export function checkFinancialFreedom(player: Player): boolean {
 ### 8.1 游戏主循环
 
 ```
-SETUP
-  ↓ 玩家选择职业和 AI 配置
-ROLLING
-  ↓ 掷骰子
-MOVING
-  ↓ 移动棋子
-EVENT_RESOLVING
-  ↓ 根据格子类型触发事件
-CARD_DECISION / TURN_END
-  ↓ 玩家做出决策或结束回合
-检查财务自由 → 进入 FAST_TRACK
-  ↓ 快车道回合
-检查胜利条件 → GAME_OVER
+SETUP（选城市 → 选职业 → 创建玩家）
+  → ROLLING → MOVING → EVENT_RESOLVING
+  → CARD_DECISION（机会/市场/支出/生育/慈善）
+  → TURN_END
+  → [可选 REPAY_LIABILITY / TAKE_LOAN]
+  → 检查财务自由 → FAST_TRACK → GAME_OVER
 ```
 
 ### 8.2 回合详细流程
 
 ```
-每个玩家回合：
 1. 确认当前玩家未破产
-2. 如果是人类玩家，等待点击"掷骰子"
-   - 如果有 charityTurns > 0，掷两个骰子，玩家选择其一
-   - 否则掷一个骰子
-3. 移动棋子（播放移动动画）
-4. 触发目标格子事件：
-   - Payday: 现金 += 月现金流
-   - Opportunity: 抽机会卡，玩家决策
-   - Market: 抽市场卡，执行效果
-   - Doodad: 抽额外支出卡，扣现金
-   - Charity: 选择是否捐款
-   - Baby: 增加 1 个孩子
-   - Settlement: 扣税一次
-5. 检查现金是否足够支付，不足则尝试贷款或破产
-6. 检查是否满足财务自由条件
-   - 是 → 进入快车道，本回合结束
-7. 玩家点击"结束回合"，轮到下一位玩家
-8. 如果当前玩家是 AI，自动执行决策
+2. 掷骰（charityTurns > 0 则双骰选一）
+3. 移动棋子
+4. 触发格子事件
+   - Payday：发工资 + paidPeriods++
+   - Baby：CardModal 生育选择 → CHOOSE_BABY
+   - Opportunity：抽卡 → getOpportunityAsset 城市缩放展示
+5. 事件结算 → checkBankruptcy
+6. 人类玩家可：贷款 / 提前还款 / 结束回合
+7. 检查财务自由 → 快车道
+8. AI 自动决策
 ```
 
-### 8.3 老鼠赛跑 → 快车道切换
+### 8.3 SETUP_GAME 流程（v3.0）
 
-切换条件：
-- 月被动收入 > 月总支出
-
-切换时：
-1. 清除所有老鼠赛跑负债（房贷、学贷、车贷等）
-2. 保留资产，但只保留其市场价值作为初始快车道现金
-3. 快车道现金 = 老鼠赛跑资产总值 + 现金
-4. 快车道收入 = 快车道资产带来的现金流
-5. 快车道支出 = 梦想目标对应的月维护成本（简化）
-
-### 8.4 快车道流程
-
-```
-1. 掷两个骰子，移动棋子
-2. 落到梦想格时，可以购买梦想
-3. 如果现金 >= 梦想成本，购买即获胜
-4. 落到资产格时，可获得高额被动收入
-5. 落到风险格时，可能损失现金
+```typescript
+case 'SETUP_GAME': {
+  const { humanPlayerName, humanProfessionId, cityId, aiCount, aiDifficulty } = action.payload;
+  // createPlayer 对每个玩家：
+  //   city = getCityById(cityId)
+  //   salary = profession.salary × city.salaryMultiplier × buff
+  //   expenses.tax/other/perChild 按 city 缩放
+  //   liabilities = normalizeLiability(profession.liabilities)
+}
 ```
 
-### 8.5 胜利条件
+StartScreen 顺序：**姓名 → 城市 → 职业 → AI 设置 → 预览 → 开始**。
 
-| 模式 | 胜利条件 |
-|------|----------|
-| 老鼠赛跑阶段 | 被动收入 > 总支出 → 进入快车道 |
-| 快车道阶段 | 购买梦想格 / 现金达到 ¥500,000 |
-| 多人模式 | 第一个完成梦想或达到目标的玩家 |
+### 8.4 老鼠赛跑 → 快车道切换
+
+1. 被动收入 > 总支出时在 Payday 触发
+2. 清除所有老鼠赛跑负债
+3. 资产市值 + 现金 − 负债 → 快车道起始现金
+4. `isInFastTrack = true`
+
+### 8.5 快车道流程
+
+掷双骰移动；梦想格购买梦想；现金 ≥ ¥500,000 获胜。
+
+### 8.6 胜利条件
+
+| 模式 | 条件 |
+|------|------|
+| 老鼠赛跑 | 被动收入 > 总支出 → 快车道 |
+| 快车道 | 现金 ≥ ¥500,000 |
+| 失败 | 月现金流 < 0 |
+| 多人 | 首个达标或最后存活者胜 |
 
 ---
 
@@ -1110,46 +1184,52 @@ CARD_DECISION / TURN_END
 
 | 难度 | 行为特征 |
 |------|----------|
-| **简单** | 随机决策， mostly 放弃投资机会，偶尔购买现金流最高的资产 |
-| **中等** | 优先购买首付可负担、现金流为正的机会；会选择性贷款投资；不购买无现金流资产 |
-| **困难** | 计算 ROI，优先购买现金流/首付比最高的资产；主动管理负债；在买方市场时大胆贷款；会卖出资产获利 |
+| **简单** | 随机决策；不会主动还款 |
+| **中等** | 购买 ROI > 3% 的正现金流资产；现金 > ¥10,000 时还信用卡 |
+| **困难** | ROI > 5% 即买；优先还高息债务；买方市场抽打折房产 |
 
 ### 9.2 AI 决策核心算法
 
 ```typescript
-// src/hooks/useAIPlayer.ts 中的决策函数
+// src/hooks/useAIPlayer.ts
 
-function shouldBuyOpportunity(player: Player, card: OpportunityCard): boolean {
-  const asset = card.asset;
-  const roi = asset.cashFlow / asset.downPayment;
+/** 高息债务优先还款 — 使用 DEBT_REPAY_PRIORITY */
+function aiRepayHighInterestDebt(player: Player, actions: GameActions): void {
+  if (player.difficulty === 'easy') return;
 
-  // 困难 AI：ROI > 0.05 就买
-  if (player.difficulty === 'hard') {
-    return roi > 0.05 && canAffordDownPayment(player, asset) || canTakeLoan(player, asset.downPayment - player.cash);
+  const sorted = [...player.liabilities].sort((a, b) => {
+    const priorityA = DEBT_REPAY_PRIORITY.indexOf(inferDebtTypeFromLiability(a));
+    const priorityB = DEBT_REPAY_PRIORITY.indexOf(inferDebtTypeFromLiability(b));
+    return priorityA - priorityB;
+  });
+
+  for (const liability of sorted) {
+    const penalty = calcPrepaymentPenalty(
+      inferDebtTypeFromLiability(liability),
+      liability.principal,
+      liability.paidPeriods ?? 0
+    );
+    const totalCost = liability.principal + penalty;
+    const reserve = player.difficulty === 'hard' ? 2000 : 10000;
+
+    if (player.cash - totalCost >= reserve) {
+      actions.repayLiability(liability.id, liability.principal);
+      return;
+    }
   }
-
-  // 中等 AI：现金流为正且负担得起
-  if (player.difficulty === 'medium') {
-    return asset.cashFlow > 0 && canAffordDownPayment(player, asset);
-  }
-
-  // 简单 AI：随机
-  return Math.random() > 0.7;
 }
 
-function shouldTakeLoan(player: Player, amount: number): boolean {
-  const currentDebt = player.liabilities.reduce((s, l) => s + l.principal, 0);
-  const maxDebt = Math.max(getMonthlyCashFlow(player), 0) * 10;
-  return amount <= maxDebt - currentDebt && player.difficulty !== 'easy';
+/** Baby 格：AI 根据月现金流决定 */
+function aiChooseBaby(player: Player): boolean {
+  if (player.children >= 3) return false;
+  const projectedCF = getMonthlyCashFlow(player) - player.expenses.perChild;
+  return projectedCF > 0;  // 仅在有正现金流时生育
 }
 ```
 
-### 9.3 AI 在快车道的行为
+### 9.3 AI 快车道行为
 
-- 优先选择离自己最近的梦想格
-- 计算掷两个骰子到达梦想的概率
-- 只有在现金接近梦想成本时才会购买梦想
-- 继续积累快车道资产以缩短目标距离
+优先最近梦想格；现金接近目标时购买梦想。
 
 ---
 
@@ -1159,177 +1239,236 @@ function shouldTakeLoan(player: Player, amount: number): boolean {
 
 | 项目 | 规范 |
 |------|------|
-| 主题色 | 深绿（财富）、金色（胜利）、深蓝（棋盘） |
-| 字体 | 中文：系统默认无衬线；英文：Inter / Roboto |
-| 间距 | 8px 网格基准 |
-| 圆角 | 卡片 12px，按钮 8px，棋子 50% |
-| 动画 | 移动 0.5s ease，弹窗 0.3s ease-out |
+| 视觉风格 | 卡通 Q 版、马卡龙色系、emoji 图标 |
+| 主题色 | 浅粉 `#FF8FA3`、浅蓝 `#8FD3FF`、鹅黄 `#FFE66D`、成功绿 `#77DD77` |
+| 字体 | **Nunito** + 系统无衬线 |
+| 动画 | framer-motion |
+| 音效 | Web Audio API |
 
-### 10.2 整体布局
+### 10.2 【新增】StartScreen 城市选择器
+
+v3.0 开局流程：**先选城市，再选职业**。
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  CashFlow — 富爸爸现金流游戏                              [菜单]  │
-├────────────────────────────────┬─────────────────────────────────┤
-│                                │                                 │
-│      棋盘区域 (7×7)            │        玩家信息面板            │
-│    ┌────┬────┬────┬───┬───┬───┐│  ┌──────────────────────────┐  │
-│    │ 24 │ 23 │ 22 │...│...│ 18││  │ 玩家：工程师              │  │
-│    ├────┼────┼────┼───┼───┼───┤│  │ 现金：¥1,000              │  │
-│    │ 01 │    │    │   │   │ 17││  │ 月收入：¥7,500            │  │
-│    │ ...│ 内 │ 圈 │   │   │...││  │ 被动收入：¥0              │  │
-│    │ 06 │ 07 │ 08 │ 09│ 10│ 11││  │ 月支出：¥5,200            │  │
-│    └────┴────┴────┴───┴───┴───┘│  │ 月现金流：¥2,300          │  │
-│                                │  │ 资产：0 | 负债：3          │  │
-│    [图例：格子类型颜色说明]      │  │ 孩子：0                    │  │
-│                                │  └──────────────────────────┘  │
-├────────────────────────────────┴─────────────────────────────────┤
-│                                                                  │
-│              操作区 / 卡片展示区                                  │
-│    ┌────────────────────────────────────────────────────────┐   │
-│    │  [卡片标题]                                              │   │
-│    │  [卡片描述]                                              │   │
-│    │  [资产信息]                                              │   │
-│    │  [买入] [放弃] [贷款买入]                                │   │
-│    └────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│    [掷骰子] [查看详细报表] [结束回合] [保存游戏]                 │
-│                                                                  │
-├──────────────────────────────────────────────────────────────────┤
-│                        日志 / 消息区                              │
-│  · 工程师 掷出 4，移动到 机会格                                  │
-│  · 工程师 抽到 "小型公寓"，决定购买                              │
-│  · 工程师 现金减少 ¥5,000，被动收入增加 ¥400                       │
-└──────────────────────────────────────────────────────────────────┘
+┌─ 选择城市（先于职业）─────────────────────┐
+│ 【一线】 上海  北京  深圳  广州              │
+│ 【二线】 杭州  成都  武汉  南京  苏州 ...    │
+│ 【三线】 长沙  郑州  合肥  昆明  南宁        │
+│ 【四线】 常德  绵阳  遵义                    │
+└────────────────────────────────────────────┘
 ```
 
-### 10.3 核心页面
+- 按 `CityTier` 分组展示（`CITY_TIER_LABELS`）
+- 每个城市按钮显示：生活成本乘数、首套首付比例
+- 选中城市后，职业列表下方 **实时预览** 调整后工资/现金流
 
-| 页面 | 说明 |
+```typescript
+// src/components/StartScreen/StartScreen.tsx
+const [cityId, setCityId] = useState(DEFAULT_CITY_ID);
+const previewStats = useMemo(() => {
+  const salary = Math.round(profession.salary * city.salaryMultiplier * salaryBuff);
+  const liabilityPay = profession.liabilities.reduce(
+    (sum, l) => sum + calcLiabilityMonthlyPayment(l.principal, l.debtType), 0
+  );
+  return { salary, liabilityPay, cashFlow: salary - tax - other - liabilityPay };
+}, [profession, city]);
+```
+
+### 10.3 【调整】PlayerPanel 城市信息
+
+角色面板显示玩家所在城市：
+
+```
+📍 杭州 · 二线 · 生活×1.08
+```
+
+```typescript
+// src/components/PlayerPanel/PlayerPanel.tsx
+const city = getCityById(selectedPlayer.cityId);
+<div className={styles.cityLine}>
+  📍 {city.name} · {CITY_TIER_LABELS[city.tier]} · 生活×{expenseMult.toFixed(2)}
+</div>
+```
+
+### 10.4 【调整】CardModal 生育弹窗
+
+Baby 格触发专用 UI（非卡片类型）：
+
+| 元素 | 说明 |
 |------|------|
-| **StartScreen** | 选择职业、玩家人数、AI 难度、开始游戏 |
-| **GameScreen** | 主游戏界面，包含棋盘、面板、操作区、日志 |
-| **CardModal** | 抽到卡片时的决策弹窗 |
-| **FinancialStatement** | 详细财务报表弹窗/页面 |
-| **WinScreen** | 胜利结算页面，展示玩家数据和用时 |
+| 标题 | 👶 生育计划 |
+| 说明 | 生孩子后月支出 + perChild；当前孩子数/上限 3 |
+| 主按钮 | 「生孩子」→ `chooseBaby(true)` |
+| 次按钮 | 「暂不生育」→ `chooseBaby(false)`，无惩罚 |
+| 禁用 | 已达 3 个孩子时主按钮禁用 |
 
-### 10.4 响应式策略
+### 10.5 负债面板与 RepayModal
 
-- 桌面端：左侧棋盘，右侧面板，下方操作区
-- 平板端：棋盘在上，面板在下，操作区浮动
-- 手机端：棋盘可缩放，面板以折叠抽屉形式呈现
+```
+┌─ 负债明细 ─────────────────────────────┐
+│ 💳 信用卡（18%）    ¥15,000   月供 ¥725  [还款] │
+│ 🏠 首套房贷（3%）   ¥600,000  月供 ¥2,108 [还款] │
+│ 🏦 银行贷款（12%）  ¥30,000   月供 ¥300   [还款] │
+│ 负债合计：¥645,000   月供合计：¥3,133    │
+└────────────────────────────────────────┘
+```
+
+RepayModal 预览字段：
+- 剩余本金、还款金额、预计违约金（`calcPrepaymentPenalty`）
+- **新月供**（EPI 重算）、新月现金流
+- 确认 → `REPAY_LIABILITY`
+
+### 10.6 CardModal 机会卡展示
+
+- metadata 基本面（PE、股息率、cityTier、租售比）
+- 房产卡标注：缩放后总价、城市首付比例、debtType、EPI 月供
+- 宏观市场卡：分类型影响列表
+
+### 10.7 ActionBar
+
+TURN_END 阶段可见：
+- 「💰 还款」→ 打开 RepayModal
+- 「🏦 贷款」→ 输入金额 → TAKE_LOAN
+- 「结束回合」
+
+### 10.8 整体布局
+
+左棋盘、右 PlayerPanel、下 ActionBar、底 LogPanel。FinancialStatement 弹窗含完整收支与负债明细。
+
+### 10.9 响应式策略
+
+桌面 / 平板 / 手机；StartScreen 城市列表在手机上纵向滚动；RepayModal 手机全屏。
 
 ---
 
 ## 十一、项目结构
 
 ```
-cashflow-game/
-├── index.html
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-├── README.md
-├── CASHFLOW_GAME.md          # 本设计文档
-├── public/
-│   └── favicon.svg
+CashFlow/
+├── CASHFLOW_GAME.md
 ├── src/
-│   ├── main.tsx
-│   ├── App.tsx
-│   ├── App.module.css
-│   ├── index.css
 │   ├── types/
-│   │   ├── game.ts           # 游戏状态、枚举、类型
-│   │   ├── player.ts         # 玩家相关类型
-│   │   ├── board.ts          # 棋盘类型
-│   │   └── cards.ts          # 卡片类型
+│   │   └── game.ts                 # City, CityTier, Player.cityId, CHOOSE_BABY, ProfessionTier
 │   ├── data/
-│   │   ├── professions.ts    # 职业数据
-│   │   ├── boardLayout.ts    # 棋盘布局
-│   │   ├── opportunityCards.ts
+│   │   ├── cities.ts               # 【新增】v3.0 20 城市数据
+│   │   ├── professions.ts          # 【调整】16 职业 × 四层级
+│   │   ├── opportunityCards.ts     # 【调整】cityTier metadata
 │   │   ├── marketCards.ts
-│   │   └── doodadCards.ts
+│   │   ├── doodadCards.ts
+│   │   └── boardLayout.ts
 │   ├── context/
-│   │   ├── GameContext.tsx   # Context Provider
-│   │   └── GameReducer.ts    # 纯函数 reducer
-│   ├── components/
-│   │   ├── StartScreen/
-│   │   │   ├── StartScreen.tsx
-│   │   │   └── StartScreen.module.css
-│   │   ├── GameScreen/
-│   │   │   ├── GameScreen.tsx
-│   │   │   └── GameScreen.module.css
-│   │   ├── Board/
-│   │   │   ├── Board.tsx
-│   │   │   ├── Space.tsx
-│   │   │   └── Board.module.css
-│   │   ├── PlayerPanel/
-│   │   │   ├── PlayerPanel.tsx
-│   │   │   └── PlayerPanel.module.css
-│   │   ├── FinancialStatement/
-│   │   │   ├── FinancialStatement.tsx
-│   │   │   └── FinancialStatement.module.css
-│   │   ├── CardModal/
-│   │   │   ├── CardModal.tsx
-│   │   │   └── CardModal.module.css
-│   │   ├── ActionBar/
-│   │   │   ├── ActionBar.tsx
-│   │   │   └── ActionBar.module.css
-│   │   ├── LogPanel/
-│   │   │   ├── LogPanel.tsx
-│   │   │   └── LogPanel.module.css
-│   │   └── WinScreen/
-│   │       ├── WinScreen.tsx
-│   │       └── WinScreen.module.css
+│   │   ├── GameContext.tsx
+│   │   └── GameReducer.ts          # CHOOSE_BABY, REPAY_LIABILITY EPI 重算, createPlayer 城市缩放
+│   ├── utils/
+│   │   ├── financial.ts            # 【替换】EPI, scaleAssetByPlayerCity, getTotalExpenses
+│   │   ├── repayEligibility.ts
+│   │   ├── storage.ts              # 【调整】cityId 存档兼容
+│   │   ├── format.ts
+│   │   └── random.ts
 │   ├── hooks/
-│   │   ├── useGameActions.ts # 封装 dispatch 动作
+│   │   ├── useGameActions.ts       # chooseBaby, repayLiability, setupGame(cityId)
+│   │   ├── useAIPlayer.ts          # 【调整】Baby 决策、高息先还
+│   │   ├── useBankruptcy.ts
 │   │   ├── useDice.ts
-│   │   ├── useAIPlayer.ts
-│   │   └── useBankruptcy.ts
-│   └── utils/
-│       ├── financial.ts      # 财务计算
-│       ├── random.ts         # 洗牌、抽卡
-│       ├── storage.ts        # localStorage
-│       └── format.ts         # 货币格式化
-└── tests/                    # 可选：单元测试
-    └── utils.financial.test.ts
+│   │   └── useSound.ts
+│   ├── components/
+│   │   ├── StartScreen/            # 【调整】城市选择器先于职业
+│   │   ├── PlayerPanel/            # 【调整】显示 cityId 城市信息
+│   │   ├── CardModal/              # 【调整】Baby 生育弹窗
+│   │   ├── FinancialStatement/     # 负债 EPI 明细
+│   │   ├── RepayModal/             # EPI 还款预览
+│   │   ├── ActionBar/
+│   │   ├── Board/
+│   │   ├── GameScreen/
+│   │   ├── WinScreen/
+│   │   ├── LogPanel/
+│   │   ├── Dice/
+│   │   └── Icons/
+│   ├── App.tsx
+│   └── main.tsx
+├── package.json
+└── vite.config.ts
 ```
 
-### 11.1 依赖清单
+### 11.1 【调整】v3.0 开发者文件变更清单
 
-```json
-{
-  "dependencies": {
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "typescript": "^5.5.0",
-    "vite": "^5.3.0"
-  }
-}
-```
+| 文件 | 变更类型 | 要点 |
+|------|----------|------|
+| `src/types/game.ts` | 【调整】 | `City`, `CityTier`, `PropertyTier`, `Player.cityId`, `GameConfig.cityId`, `ProfessionTier`, `CHOOSE_BABY`, `totalLoanMonth` |
+| `src/data/cities.ts` | 【新增】 | 20 城、`CITY_TIER_PRICE_MULTIPLIER`、`getCityById` |
+| `src/data/professions.ts` | 【调整】 | 16 职业、四层级、Buff |
+| `src/utils/financial.ts` | 【替换】 | `calcEqualPrincipalInterestPayment`, `DEBT_TYPE_CONFIG`, `scaleAssetByPlayerCity`, `getCityExpenseMultiplier`, `getDownPaymentRate`, `getTotalExpenses` 不重复 |
+| `src/context/GameReducer.ts` | 【调整】 | `createPlayer` 城市缩放, `CHOOSE_BABY`, `REPAY_LIABILITY` EPI 重算 |
+| `src/components/StartScreen/*` | 【调整】 | 城市选择器、预览面板 |
+| `src/components/PlayerPanel/*` | 【调整】 | 城市行展示 |
+| `src/components/CardModal/*` | 【调整】 | Baby 生育弹窗 |
+| `src/data/opportunityCards.ts` | 【调整】 | `metadata.cityTier` |
+| `src/hooks/useGameActions.ts` | 【调整】 | `chooseBaby`, `setupGame` 含 cityId |
+| `src/hooks/useAIPlayer.ts` | 【调整】 | Baby 决策、EPI 还款 |
+| `src/utils/storage.ts` | 【调整】 | 旧存档 `cityId ?? DEFAULT_CITY_ID` |
+
+### 11.2 v3.0 数据文件 Checklist
+
+- [x] `cities.ts` — 20 城四线分级
+- [x] `game.ts` — City / cityId / CHOOSE_BABY / ProfessionTier
+- [x] `financial.ts` — EPI 公式、城市工具函数、getTotalExpenses
+- [x] `GameReducer.ts` — createPlayer 城市、CHOOSE_BABY、REPAY_LIABILITY
+- [x] `professions.ts` — 16 职业
+- [x] `StartScreen` — 城市选择器
+- [x] `PlayerPanel` — 城市展示
+- [x] `CardModal` — Baby 弹窗
+- [x] `storage.ts` — cityId 迁移
 
 ---
 
 ## 十二、开发路线图
 
-| 阶段 | 内容 | 里程碑 | 预估工时 |
-|------|------|--------|----------|
-| **Phase 1** | 初始化 Vite + React 项目；配置 TypeScript；搭建基础目录 | 项目可运行 | 0.5 天 |
-| **Phase 2** | 实现类型定义、数据文件、棋盘渲染 | 棋盘可见 | 1 天 |
-| **Phase 3** | 玩家移动、骰子系统、格子事件触发 | 基础回合可运行 | 1 天 |
-| **Phase 4** | 卡片系统（抽卡、决策、购买、放弃） | 可进行投资 | 2 天 |
-| **Phase 5** | 财务报表系统、资产/负债计算、银行贷款 | 财务循环完整 | 2 天 |
-| **Phase 6** | 财务自由判定、快车道、胜利条件 | 游戏可通关 | 1.5 天 |
-| **Phase 7** | AI 玩家逻辑（简单/中等/困难） | 单人可玩 | 2 天 |
-| **Phase 8** | UI 美化、动画、音效、游戏平衡 | Alpha 版 | 2 天 |
-| **Phase 9** | 存档系统、多语言、响应式适配 | Beta 版 | 2 天 |
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| **Phase 1** | 基础框架：React + Vite + Context/Reducer | ✅ 已完成 |
+| **Phase 2** | 棋盘 24 格、掷骰子、格子事件、回合流转 | ✅ 已完成 |
+| **Phase 3** | 机会/市场/支出卡、资产买卖、贷款机制 | ✅ 已完成 |
+| **Phase 4** | 卡通 UI、FinancialStatement、AI 对手、快车道 | ✅ 已完成 |
+| **Phase 5** | 【v3.0】城市系统、16 职业、EPI 信贷、城市缩放 | ✅ 大部分完成 |
+| **Phase 6** | 【v3.0】StartScreen 城市选择、Baby 选择、RepayModal | 🔶 部分完成 |
+| Phase 7 | 本地存档完善、旧存档全量迁移 | 🔲 待做 |
+| Phase 8 | 多语言、响应式优化、成就系统 | 🔲 待做 |
+| Phase 9 | 网络多人、PWA、Electron 打包 | 🔲 远期 |
 
-合计约 **14 天** 完成可玩的 Beta 版本。
+### 12.1 Phase 5 已完成项
+
+- [x] `src/data/cities.ts` — 20 城四线分级
+- [x] `Player.cityId` / `GameConfig.cityId`
+- [x] `createPlayer` 城市薪资/支出缩放
+- [x] `calcEqualPrincipalInterestPayment` + 7 类 EPI 配置
+- [x] `REPAY_LIABILITY` 部分还款 EPI 重算
+- [x] `getTotalExpenses` 不重复计算 expenses.mortgage
+- [x] `scaleAssetByPlayerCity` 房产/车辆城市缩放
+- [x] 16 职业 × 四层级 + Buff
+- [x] houseFirst 免罚期修正为 12 期
+
+### 12.2 Phase 6 部分完成 / 进行中
+
+- [x] StartScreen 城市选择器（先于职业）
+- [x] PlayerPanel 城市信息行
+- [x] CardModal Baby 生育弹窗 + CHOOSE_BABY
+- [x] RepayModal 基础还款预览
+- [ ] RepayModal EPI 新月供动画优化
+- [ ] FinancialStatement 城市税率/首付说明
+- [ ] AI Baby 决策策略调优
+
+### 12.3 延期项（Deferred）
+
+| 项目 | 原因 |
+|------|------|
+| 浮动利率房贷 | 简化 EPI 模型，利率变化仅影响新贷 |
+| 部分还款缩期 | 保持 totalLoanMonth 不变，仅降月供 |
+| 城市专属机会卡池 | 当前统一卡池 + 城市缩放 |
+| 职业 × 城市禁配 | 暂不限制组合 |
+| 存档云同步 | 纯前端，无后端 |
+| 多语言 i18n | Phase 8 |
+
+**在线可玩版本：** https://FrankJIE09.github.io/CashFlow/（v3.0）
 
 ---
 
@@ -1339,109 +1478,288 @@ cashflow-game/
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| 月贷款利率 | 1% | 银行贷款月利率 |
-| 贷款额度倍数 | 10 × 月现金流 | 最大贷款余额 |
-| 慈善捐款比例 | 10% | 捐款额 = 月收入 × 10% |
-| 慈善双骰子回合 | 3 | 捐款后享受的双骰子回合数 |
-| 孩子数量上限 | 3 | 每位玩家最多孩子数 |
-| 快车道目标现金 | ¥500,000 | 达到该金额也可获胜 |
-| 游戏最大回合 | 200 | 防止无限循环 |
+| 银行贷款利率 | 月 1% / 年 12% | `bankBusinessLoan` 仅付息 |
+| 贷款额度 | **无上限** | |
+| 失败条件 | 月现金流 < 0 | |
+| 慈善捐款比例 | 10% | |
+| 慈善双骰子回合 | 3 | |
+| 孩子上限 | 3 | |
+| 快车道目标 | ¥500,000 | |
+| 默认城市 | 杭州 (hangzhou) | `DEFAULT_CITY_ID` |
 
-### 13.2 卡牌数量配置
+### 13.2 【调整】v3.0 债务参数完整表
 
-| 卡组 | 初始数量 | 建议最小 |
-|------|----------|----------|
-| 机会卡 | 11 张（6 小 + 5 大） | 10 张 |
-| 市场卡 | 6 张 | 6 张 |
-| 额外支出卡 | 8 张 | 8 张 |
+| debtType | 月利率 | 年化 | EPI 期数 | 违约金条件 | 违约金率 |
+|----------|--------|------|----------|------------|----------|
+| creditCard | 1.5% | 18% | 24 | 无 | 0 |
+| consumerLoan | 0.8% | 9.6% | 36 | paidPeriods < 12 | 3% |
+| carLoan | 0.35% | 4.2% | 60 | paidPeriods < 12 | 2% |
+| houseFirst | 0.25% | 3% | 360 | paidPeriods < 12 | 1% |
+| houseSecond | 0.33% | 4% | 360 | 始终 | 1% |
+| shopMortgage | 0.42% | 5.04% | 240 | 始终 | 2% |
+| bankBusinessLoan | 1.0% | 12% | — | 无 | 0 |
 
-### 13.3 平衡性设计目标
+> **【调整】** houseFirst 免罚期：**12 期**（v2.0 误写为 60 期/5 年，v3.0 已修正）。
 
-| 目标 | 实现方式 |
-|------|----------|
-| 前期拮据 | 初始现金低，额外支出卡频繁出现 |
-| 投资回报感 | 小生意 3-5 回合回本，大买卖 6-10 回合回本 |
-| 质变时刻 | 当被动收入超过支出时，玩家明显感到"解脱" |
-| 随机性 | 骰子和市场卡制造不确定性 |
-| 策略性 | 贷款、卖出时机、资产配置选择 |
-| 游戏时长 | 单人游戏 30-60 分钟，多人游戏 45-90 分钟 |
+### 13.3 【调整】v3.0 城市参数表
 
-### 13.4 常见测试场景
+| 线级 | 城市数 | 薪资乘数范围 | 生活乘数范围 | 房产税率 | 首套首付 | 二套首付 |
+|------|--------|--------------|--------------|----------|----------|----------|
+| tier1 一线 | 4 | 1.05–1.15 | 1.22–1.35 | 0.5%–0.6% | 30% | 38%–40% |
+| tier2 二线 | 8 | 0.85–1.00 | 0.88–1.08 | 0.35%–0.4% | 25% | 32%–35% |
+| tier3 三线 | 5 | 0.70–0.80 | 0.70–0.80 | 0.25%–0.3% | 20% | 28%–30% |
+| tier4 四线 | 3 | 0.55–0.60 | 0.55–0.60 | 0.2% | 15% | 25% |
+
+**房产基准价乘数**（相对 tier2）：
+
+| tier1 | tier2 | tier3 | tier4 |
+|-------|-------|-------|-------|
+| 2.8 | 1.0 | 0.45 | 0.28 |
+
+### 13.4 房产参数（基准 tier2，购买时按城市缩放）
+
+| cityTier | 基准总价 | 基准首付 | 基准月租 | debtType |
+|----------|----------|----------|----------|----------|
+| tier4 | ¥126,000 | 15% | ¥504 | houseFirst |
+| tier3 | ¥450,000 | 20% | ¥1,800 | houseFirst |
+| tier2 | ¥2,800,000 | 25% | ¥6,500 | houseFirst |
+| tier1 | ¥6,500,000 | 30% | ¥15,000 | houseSecond* |
+| commercial | ¥1,200,000 | 50% | ¥8,000 | shopMortgage |
+
+### 13.5 卡牌数量配置
+
+| 卡组 | 数量 |
+|------|------|
+| 机会卡 | 28+（小 18 + 大 10） |
+| 市场卡 | 18（含 10+ macroEvent） |
+| 额外支出 | 8+ |
+
+### 13.6 【调整】16 职业参数表（tier2 基准）
+
+| 职业 | 层级 | 基准工资 | 初始现金 | 主要负债 principal |
+|------|------|----------|----------|-------------------|
+| 医生 | elite | 22,000 | 15,000 | 房贷 120 万 |
+| 律师 | elite | 18,000 | 12,000 | 房贷 90 万 |
+| 飞行员 | elite | 15,000 | 10,000 | 房贷 70 万 |
+| 工程师 | professional | 12,000 | 8,000 | 房贷 60 万 |
+| 教师 | professional | 6,500 | 5,000 | 房贷 28 万 |
+| 护士 | professional | 7,500 | 4,500 | 房贷 32 万 |
+| 会计 | professional | 9,000 | 6,000 | 房贷 45 万 |
+| 设计师 | professional | 8,500 | 5,500 | 房贷 38 万 |
+| 司机 | service | 5,500 | 3,000 | 房贷 15 万 |
+| 秘书 | service | 6,000 | 4,000 | 房贷 18 万 |
+| 销售 | service | 7,000 | 3,500 | 房贷 22 万 |
+| 保安 | basic | 4,500 | 2,500 | 房贷 12 万 |
+| 外卖员 | basic | 5,000 | 2,000 | 房贷 10 万 |
+| 工厂工人 | basic | 4,800 | 2,800 | 房贷 13 万 |
+| 自由职业者 | basic | 6,500 | 4,000 | 房贷 20 万 |
+| 收银员 | basic | 4,200 | 2,200 | 房贷 9 万 |
+
+### 13.7 平衡性设计目标
+
+| 目标 | 实现 |
+|------|------|
+| 城市差异 | 一线高薪资高支出，四线低门槛 |
+| 债务管理 | EPI 月供 + 提前还款策略 |
+| 房产策略 | 商铺正现金流 vs 一线负现金流赌升值 |
+| 生育选择 | 玩家自主，拒绝无惩罚 |
+| 宏观事件 | 2008 危机 / 楼市复苏 / AI 周期差异化 |
+| 游戏时长 | 30–90 分钟 |
+
+### 13.8 【调整】v3.0 常见测试场景
 
 | 场景 | 验证点 |
 |------|--------|
-| 工程师买小公寓 | 现金减少、资产增加、现金流增加 |
-| 市场繁荣后卖出房产 | 卖出价格正确、负债清除 |
-| 医生玩家 | 高收入高支出，突破门槛高 |
-| 司机玩家 | 低起点但目标门槛低 |
-| 破产边缘 | 贷款不足时正确处理破产 |
-| 财务自由 | 被动收入 > 支出时正确进入快车道 |
+| 上海 + 工程师开局 | 薪资 ×1.15，支出 ×1.35，预览现金流正确 |
+| 遵义 + 保安开局 | 低生活成本，月现金流可能为正 |
+| 购买 tier2 房产（上海玩家） | cost ×2.8，首付 30% |
+| 提前还房贷（paidPeriods < 12） | 扣 1% 违约金，EPI 新月供下降 |
+| 提前还房贷（paidPeriods ≥ 12） | 无违约金 |
+| Baby 格选「暂不生育」 | 无支出变化，无惩罚 |
+| Baby 格选「生孩子」 | children+1，月支出 +perChild |
+| REPAY_LIABILITY 部分还款 | monthlyPayment 重算，getTotalExpenses 不重复 |
+| 买第 2 套房 | debtType=houseSecond；getPropertyTax > 0 |
+| 2008 危机卡 | 房产 −35%、债券 +5% 差异化 |
+| AI 困难模式 | 优先还 creditCard |
 
 ---
 
 ## 十四、扩展方向
 
-### 14.1 短期扩展
+### 14.1 短期（v3.x）
 
-- 音效与背景音乐
-- 棋子动画和移动轨迹
-- 本地自动存档与手动存档
-- 悔棋功能（仅人类玩家）
-- 游戏数据统计（胜率、平均回合数）
+- RepayModal EPI 交互完善
+- 旧存档 cityId / totalLoanMonth 自动迁移
+- 本地存档持久化
 
-### 14.2 中期扩展
+### 14.2 中期
 
-- 多语言（中文简体、中文繁体、英文）
-- 自定义职业编辑器
-- 自定义卡牌编辑器
-- 成就系统与徽章
-- 排行榜（本地）
+- 多语言（中/英）
+- 自定义职业 / 卡牌编辑器
+- 成就系统
+- 城市专属事件卡
 
-### 14.3 长期扩展
+### 14.3 已实现
 
-- 网络多人对战（WebSocket 后端）
-- 移动端 App（React Native / PWA）
+- ✅ v1.x：卡通 UI、市场卡、贷款无上限、月现金流失败
+- ✅ v2.0：7 类债务、26 子类资产、宏观差异化、房产税
+- ✅ v3.0：20 城四线、16 职业、EPI 信贷、城市缩放、生育选择
+
+### 14.4 长期
+
+- 网络多人对战
+- PWA 离线游玩
 - AI 对局回放与分析
-- 赛季制与卡牌平衡更新
-- 在线匹配与好友对战
+- Electron 桌面版
+- 赛季平衡更新
 
 ---
 
 ## 十五、附录：快速参考
 
-### 15.1 关键公式
+### 15.1 【调整】v3.0 关键公式
 
 ```
 月现金流 = 工资 + 被动收入 - 总支出
-被动收入 = Σ(所有资产现金流)
-总支出 = 税 + 房贷 + 学贷 + 车贷 + 信用卡 + 其他 + 孩子数 × 每个孩子支出
+
+被动收入 = Σ(资产现金流 × 类型乘数 × 板块乘数)
+
+总支出 = Σ(负债.monthlyPayment) + tax + other + 孩子×perChild + getPropertyTax(player)
+       （不含 expenses.mortgage / carLoan / creditCard，避免重复）
+
+EPI 月供 = P × r × (1+r)^n / ((1+r)^n - 1)
+
+实际月薪 = profession.salary × city.salaryMultiplier × buff.salary
+
+房产缩放 = asset.cost × (CITY_TIER_PRICE_MULTIPLIER[playerCity.tier] / CITY_TIER_PRICE_MULTIPLIER[cardCityTier])
+
+首付 = cost × getDownPaymentRate(city, isSecondHome, isCommercial)
+
+持有税 = 第2套起：每套 marketValue × city.propertyTaxRate / 12
+
 财务自由 = 被动收入 > 总支出
+游戏失败 = 月现金流 < 0
 净资产 = 现金 + 资产市值 - 负债本金
+提前还款实付 = 还款本金 + calcPrepaymentPenalty(debtType, remainingPrincipal, paidPeriods)
 ```
 
-### 15.2 关键枚举速查
+### 15.2 【调整】v3.0 关键枚举速查
 
 ```typescript
-SpaceType:  'payday' | 'opportunity' | 'market' | 'doodad' | 'charity' | 'baby' | 'settlement'
-CardType:   'opportunity' | 'market' | 'doodad'
-AssetType:  'stock' | 'realEstate' | 'business' | 'intellectual'
-GamePhase:  'SETUP' | 'ROLLING' | 'MOVING' | 'EVENT_RESOLVING' | 'CARD_DECISION' | 'TURN_END' | 'FAST_TRACK' | 'GAME_OVER'
-Difficulty: 'easy' | 'medium' | 'hard'
+// 城市
+CityTier: 'tier1' | 'tier2' | 'tier3' | 'tier4'
+PropertyTier: CityTier | 'commercial'
+
+// 职业
+ProfessionTier: 'elite' | 'professional' | 'service' | 'basic'
+
+// 债务
+DebtType: 'creditCard' | 'consumerLoan' | 'carLoan' | 'houseFirst'
+        | 'houseSecond' | 'shopMortgage' | 'bankBusinessLoan'
+
+// 资产
+AssetType: 'stock' | 'bond' | 'commodity' | 'reit' | 'derivative'
+         | 'overseas' | 'entity' | 'realEstate' | 'business' | 'intellectual'
+
+// 棋盘
+SpaceType: 'payday' | 'opportunity' | 'market' | 'doodad' | 'charity' | 'baby' | 'settlement'
+
+// 状态机
+GamePhase: 'SETUP' | 'ROLLING' | 'MOVING' | 'EVENT_RESOLVING' | 'CARD_DECISION'
+         | 'TURN_END' | 'FAST_TRACK' | 'GAME_OVER'
 ```
 
-### 15.3 最小可玩版本（MVP）检查清单
+### 15.3 【新增】City 接口速查
 
-- [ ] 棋盘渲染，24 格正确显示
-- [ ] 1 个人类玩家 + 1 个 AI 玩家可开始游戏
-- [ ] 掷骰子移动，棋子位置正确
-- [ ] 4 种格子事件可触发（Payday、Opportunity、Doodad、Market）
-- [ ] 可购买机会卡中的资产
-- [ ] 财务报表实时更新
-- [ ] 财务自由判定正确
-- [ ] 进入快车道后可继续移动
-- [ ] 达到胜利条件后显示胜利画面
+```typescript
+interface City {
+  id: string;                  // 如 'shanghai', 'hangzhou', 'changde'
+  name: string;                // 如 '上海', '杭州', '常德'
+  tier: CityTier;              // 'tier1' | 'tier2' | 'tier3' | 'tier4'
+  salaryMultiplier: number;    // 相对 tier2 基准
+  expenseMultiplier: number;   // 生活成本
+  propertyTaxRate: number;     // 年税率小数
+  downPaymentFirst: number;    // 首套房首付比例
+  downPaymentSecond: number;   // 二套房首付比例
+}
+```
+
+### 15.4 【调整】GameAction 完整列表
+
+```typescript
+type GameAction =
+  | { type: 'SETUP_GAME'; payload: GameConfig }
+  | { type: 'RESTART_GAME' }
+  | { type: 'ROLL_DICE'; payload: { dice: number } }
+  | { type: 'MOVE_PLAYER' }
+  | { type: 'RESOLVE_SPACE' }
+  | { type: 'DRAW_CARD'; payload: { cardType: CardType } }
+  | { type: 'BUY_ASSET' }
+  | { type: 'BUY_DISCOUNTED_ASSET' }
+  | { type: 'DECLINE_CARD' }
+  | { type: 'PAY_DOODAD' }
+  | { type: 'DONATE_CHARITY'; payload: { donate: boolean } }
+  | { type: 'CHOOSE_BABY'; payload: { haveBaby: boolean } }     // 【v3.0 新增】
+  | { type: 'APPLY_MARKET_EFFECT' }
+  | { type: 'DRAW_DISCOUNTED_OPPORTUNITY' }
+  | { type: 'END_TURN' }
+  | { type: 'TAKE_LOAN'; payload: { amount: number } }
+  | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
+  | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number } }
+  | { type: 'DECLARE_BANKRUPTCY' };
+```
+
+### 15.5 【调整】financial.ts 核心函数索引
+
+| 函数 | 用途 |
+|------|------|
+| `calcEqualPrincipalInterestPayment` | EPI 月供计算 |
+| `calcLiabilityMonthlyPayment` | 按 debtType 计算月供 |
+| `calcPrepaymentPenalty` | 提前还款违约金 |
+| `previewRepayment` | 还款预览（本金/违约金/新月供） |
+| `getCityExpenseMultiplier` | 城市生活成本乘数 |
+| `getCityPropertyTaxRate` | 城市房产持有税率 |
+| `getDownPaymentRate` | 城市首付比例 |
+| `getPropertyTax` | 多套房产月持有税 |
+| `scaleAssetByPlayerCity` | 房产/车辆按玩家城市缩放 |
+| `getOpportunityAsset` | 机会卡资产（含缩放） |
+| `getFixedExpenses` / `getTotalExpenses` | 总支出（不重复） |
+| `getMonthlyCashFlow` | 月现金流 |
+| `checkFinancialFreedom` | 财务自由判定 |
+| `checkBankruptcy` | 破产判定 |
+
+### 15.6 v3.0 MVP 检查清单
+
+- [x] 棋盘 24 格、掷骰子、格子事件
+- [x] 7 类 debtType + DEBT_TYPE_CONFIG
+- [x] calcEqualPrincipalInterestPayment / calcLiabilityMonthlyPayment
+- [x] REPAY_LIABILITY EPI 重算
+- [x] getTotalExpenses 不重复计算
+- [x] 20 城四线 + cities.ts
+- [x] Player.cityId / GameConfig.cityId
+- [x] 16 职业 × 四层级
+- [x] scaleAssetByPlayerCity
+- [x] CHOOSE_BABY 生育选择
+- [x] StartScreen 城市选择器
+- [x] PlayerPanel 城市展示
+- [x] CardModal Baby 弹窗
+- [x] houseFirst 免罚期 12 期
+- [ ] RepayModal 交互 polish
+- [ ] 旧存档 EPI 字段全量迁移
+
+### 15.7 EPI 月供速查表（万元本金）
+
+| 本金(万) | creditCard 24期 | consumerLoan 36期 | carLoan 60期 | houseFirst 360期 |
+|----------|-----------------|-------------------|--------------|------------------|
+| 1 | ¥502 | ¥318 | ¥184 | ¥42 |
+| 5 | ¥2,508 | ¥1,590 | ¥922 | ¥211 |
+| 10 | ¥5,016 | ¥3,180 | ¥1,844 | ¥422 |
+| 50 | ¥25,080 | ¥15,900 | ¥9,220 | ¥2,108 |
+| 100 | ¥50,160 | ¥31,800 | ¥18,440 | ¥4,216 |
+
+*均为 EPI 初始月供近似值，四舍五入至整数元。*
 
 ---
 
-*文档版本：v1.1*  
-*最后更新：2026-07-03*
+*文档版本：v3.0*  
+*最后更新：2026-07-04*

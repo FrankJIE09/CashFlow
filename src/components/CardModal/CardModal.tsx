@@ -4,12 +4,17 @@ import { useGameActions } from '../../hooks/useGameActions';
 import { useSound } from '../../hooks/useSound';
 import type { AssetType } from '../../types/game';
 import {
+  calculateBuyCost,
+  calculateSellProceeds,
   canAffordDownPayment,
+  canPurchaseOpportunity,
+  getAssetPriceMultiplier,
   getAssetTypeLabel,
-  getCurrentDebt,
-  getMaxLoanAmount,
+  getNetWorth,
+  getOpportunityAsset,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
+import { getAssetIcon } from '../Icons/GameIcons';
 import styles from './CardModal.module.css';
 
 export function CardModal() {
@@ -33,7 +38,6 @@ export function CardModal() {
   const space = state.spaces[player.position];
   const card = state.currentCard;
 
-  // Charity handling
   if (space.type === 'charity') {
     const donation = Math.round(player.salary * 0.1);
     return (
@@ -61,13 +65,43 @@ export function CardModal() {
     );
   }
 
+  if (space.type === 'baby') {
+    const perChild = player.expenses.perChild;
+    const atLimit = player.children >= 3;
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.modal}>
+          <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
+          <h2 className={styles.title}>👶 生育计划</h2>
+          <p className={styles.description}>
+            你来到了「生孩子」格子。是否迎接新生命？
+          </p>
+          <p className={styles.description}>
+            生孩子后，每月额外支出 {formatCurrency(perChild)}（当前 {player.children} 个孩子，上限 3 个）。
+          </p>
+          <p className={styles.description}>选择「暂不生育」无任何惩罚。</p>
+          <div className={styles.actions}>
+            <button
+              className={styles.primaryButton}
+              onClick={() => actions.chooseBaby(true)}
+              disabled={atLimit}
+            >
+              {atLimit ? '已达孩子上限' : '生孩子'}
+            </button>
+            <button className={styles.secondaryButton} onClick={() => actions.chooseBaby(false)}>
+              暂不生育
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!card) return null;
 
-  // Market card
   if (card.type === 'market') {
     const effect = card.effect;
 
-    // Buyout: let player choose an asset to sell
     if (effect.type === 'buyout') {
       const targetType = effect.targetAssetType;
       const sellableAssets = targetType
@@ -86,15 +120,19 @@ export function CardModal() {
             ) : (
               <div className={styles.assetList}>
                 {sellableAssets.map((asset) => {
-                  const totalMultiplier = (effect.multiplier || 1) * state.marketMultiplier[asset.type];
-                  const sellPrice = Math.round(asset.marketValue * totalMultiplier);
+                  const effectiveMult =
+                    (effect.multiplier || 1) *
+                    getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
+                  const sellPrice = calculateSellProceeds(asset, effectiveMult, {});
                   return (
                     <div key={asset.id} className={styles.assetListItem}>
                       <div>
-                        <div className={styles.assetListName}>{asset.name}</div>
+                        <div className={styles.assetListName}>
+                          {getAssetIcon(asset.type)} {asset.name}
+                        </div>
                         <div className={styles.assetListMeta}>
-                          当前市值 {formatCurrency(asset.marketValue)} × {totalMultiplier.toFixed(2)} ={' '}
-                          {formatCurrency(sellPrice)}
+                          当前市值 {formatCurrency(asset.marketValue)} × {effectiveMult.toFixed(2)} ={' '}
+                          {formatCurrency(sellPrice)}（已扣交易费）
                         </div>
                       </div>
                       <button
@@ -119,7 +157,6 @@ export function CardModal() {
       );
     }
 
-    // Discount: draw a discounted real estate opportunity
     if (effect.type === 'discount') {
       return (
         <div className={styles.overlay}>
@@ -140,19 +177,47 @@ export function CardModal() {
       );
     }
 
-    // Other market effects: appreciation, depreciation, rate change, sector boom
+    const impactPreview =
+      effect.assetImpacts &&
+      Object.entries(effect.assetImpacts)
+        .slice(0, 6)
+        .map(([key, impact]) => {
+          const parts: string[] = [];
+          if (impact.priceChange) parts.push(`估值×${impact.priceChange}`);
+          if (impact.cashFlowChange) parts.push(`现金流×${impact.cashFlowChange}`);
+          const label = (['stock', 'bond', 'reit', 'commodity', 'derivative', 'overseas', 'entity', 'realEstate', 'business', 'intellectual'] as string[]).includes(key)
+            ? getAssetTypeLabel(key as AssetType)
+            : key;
+          return `${label}: ${parts.join(', ')}`;
+        });
+
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
           <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡</div>
           <h2 className={styles.title}>{card.title}</h2>
           <p className={styles.description}>{card.description}</p>
+          {effect.eventCategory && (
+            <div className={styles.marketInfo}>
+              <div>事件类别: {effect.eventCategory}</div>
+            </div>
+          )}
+          {impactPreview && impactPreview.length > 0 && (
+            <div className={styles.marketInfo}>
+              <div>主要影响</div>
+              <div className={styles.impactList}>
+                {impactPreview.map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className={styles.marketInfo}>
-            <div>当前市场乘数</div>
+            <div>当前市场乘数（部分）</div>
             <div className={styles.marketMultipliers}>
-              {Object.entries(state.marketMultiplier).map(([type, value]) => (
+              {(['stock', 'bond', 'reit', 'realEstate', 'overseas'] as AssetType[]).map((type) => (
                 <span key={type}>
-                  {getAssetTypeLabel(type as AssetType)}: {value.toFixed(2)}
+                  {getAssetTypeLabel(type)}: {state.marketMultiplier[type].toFixed(2)}
                 </span>
               ))}
             </div>
@@ -168,12 +233,10 @@ export function CardModal() {
     );
   }
 
-  // Doodad card
   if (card.type === 'doodad') {
     const shortfall = card.cost - player.cash;
     const canPay = player.cash >= card.cost;
-    const maxLoan = getMaxLoanAmount(player) - getCurrentDebt(player);
-    const canLoan = shortfall > 0 && shortfall <= maxLoan;
+    const canLoan = shortfall > 0;
 
     return (
       <div className={styles.overlay}>
@@ -202,14 +265,15 @@ export function CardModal() {
     );
   }
 
-  // Opportunity card
   if (card.type === 'opportunity') {
-    const asset = card.asset;
+    const asset = getOpportunityAsset(card, player);
+    const meta = asset.metadata;
     const isDiscounted = space.type === 'market';
-    const affordable = canAffordDownPayment(player, asset);
-    const shortfall = asset.downPayment - player.cash;
-    const maxLoan = getMaxLoanAmount(player) - getCurrentDebt(player);
-    const canLoan = shortfall > 0 && shortfall <= maxLoan;
+    const purchaseGate = canPurchaseOpportunity(player, card, state.marketMultiplier, state.sectorMultiplier);
+    const totalBuyCost = calculateBuyCost(asset) + (card.dueDiligenceCost ?? 0);
+    const affordable = canAffordDownPayment(player, asset) && player.cash >= totalBuyCost - asset.downPayment;
+    const shortfall = totalBuyCost - player.cash;
+    const canLoan = shortfall > 0 && purchaseGate.allowed;
 
     return (
       <div className={styles.overlay}>
@@ -217,8 +281,37 @@ export function CardModal() {
           <div className={styles.cardType} style={{ backgroundColor: '#3498db' }}>
             {isDiscounted ? '打折房产' : card.kind === 'smallDeal' ? '小生意' : '大买卖'}
           </div>
-          <h2 className={styles.title}>{card.title}</h2>
+          <h2 className={styles.title}>
+            {getAssetIcon(asset.type)} {card.title}
+          </h2>
           <p className={styles.description}>{card.description}</p>
+
+          {meta && (
+            <div className={styles.fundamentals}>
+              {meta.ticker && (
+                <span className={styles.fundTag}>{meta.exchange} {meta.ticker}</span>
+              )}
+              {meta.sector && <span className={styles.fundTag}>{meta.sector}</span>}
+              {meta.liquidity && <span className={styles.fundTag}>{meta.liquidity}</span>}
+              {meta.peTTM && <span className={styles.fundTag}>PE {meta.peTTM}</span>}
+              {meta.dividendYield && (
+                <span className={styles.fundTag}>股息 {(meta.dividendYield * 100).toFixed(1)}%</span>
+              )}
+              {meta.creditRating && <span className={styles.fundTag}>{meta.creditRating}</span>}
+              {meta.ytm && <span className={styles.fundTag}>YTM {(meta.ytm * 100).toFixed(1)}%</span>}
+              {meta.riskLevel && <span className={styles.fundTag}>风险 {meta.riskLevel}</span>}
+            </div>
+          )}
+
+          {card.minNetWorth && (
+            <div className={styles.gateInfo}>
+              门槛：净资产 ≥ {formatCurrency(card.minNetWorth)}
+              （当前 {formatCurrency(getNetWorth(player, state.marketMultiplier, state.sectorMultiplier))}）
+            </div>
+          )}
+          {card.dueDiligenceCost && (
+            <div className={styles.gateInfo}>尽调费：{formatCurrency(card.dueDiligenceCost)}</div>
+          )}
 
           <div className={styles.assetDetails}>
             <div className={styles.assetRow}>
@@ -230,7 +323,7 @@ export function CardModal() {
               <span>{formatCurrency(asset.cost)}</span>
             </div>
             <div className={styles.assetRow}>
-              <span>首付</span>
+              <span>首付/本金</span>
               <span className={styles.highlight}>{formatCurrency(asset.downPayment)}</span>
               {isDiscounted && <span className={styles.discountTag}>打折</span>}
             </div>
@@ -243,18 +336,26 @@ export function CardModal() {
               <span className={styles.positive}>+{formatCurrency(asset.cashFlow)}</span>
             </div>
             <div className={styles.assetRow}>
+              <span>含交易费总支出</span>
+              <span>{formatCurrency(totalBuyCost)}</span>
+            </div>
+            <div className={styles.assetRow}>
               <span>投资回报率</span>
-              <span>{((asset.cashFlow / asset.downPayment) * 100).toFixed(1)}%</span>
+              <span>{asset.downPayment > 0 ? ((asset.cashFlow / asset.downPayment) * 100).toFixed(1) : '0'}%</span>
             </div>
           </div>
+
+          {!purchaseGate.allowed && (
+            <div className={styles.blockedReason}>{purchaseGate.reason}</div>
+          )}
 
           <div className={styles.actions}>
             <button
               className={styles.primaryButton}
               onClick={isDiscounted ? actions.buyDiscountedAsset : actions.buyAsset}
-              disabled={!affordable && !canLoan}
+              disabled={!purchaseGate.allowed || (!affordable && !canLoan)}
             >
-              {affordable ? '买入' : `贷款买入（缺 ${formatCurrency(shortfall)}）`}
+              {affordable ? '买入' : purchaseGate.allowed ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}
             </button>
             <button className={styles.secondaryButton} onClick={actions.declineCard}>
               放弃

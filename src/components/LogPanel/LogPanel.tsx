@@ -7,6 +7,7 @@ const LOG_ICONS: Record<string, string> = {
   expense: '💸',
   asset: '🏦',
   liability: '⛓️',
+  repay: '✅',
   market: '📈',
   system: '🔔',
   win: '👑',

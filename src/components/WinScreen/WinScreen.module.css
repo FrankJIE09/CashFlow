@@ -65,6 +65,24 @@
   font-weight: 800;
 }
 
+.failModal {
+  border-color: rgba(255, 154, 162, 0.5);
+}
+
+.failReason {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: var(--color-danger-dark);
+  font-weight: 800;
+}
+
+.subWinner {
+  margin: 0 0 28px 0;
+  font-size: 16px;
+  color: var(--color-text-light);
+  font-weight: 700;
+}
+
 .stats {
   background: #FFF8F0;
   border-radius: 20px;

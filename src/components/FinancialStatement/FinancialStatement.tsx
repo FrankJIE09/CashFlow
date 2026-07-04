@@ -1,25 +1,57 @@
-import type { Player } from '../../types/game';
+import { useMemo, useState } from 'react';
+import type { DebtType, Liability, Player } from '../../types/game';
 import { useGame } from '../../context/GameContext';
-import { PROFESSIONS } from '../../data/professions';
+import { getPlayerProfessionName } from '../../data/professions';
 import {
+  DEBT_TYPE_CONFIG,
   getAssetMarketValue,
+  getAssetTypeLabel,
+  getDebtTypeConfig,
+  getDebtTypeLabel,
+  getIncomeTypeLabel,
   getMonthlyCashFlow,
   getNetWorth,
   getPassiveIncome,
+  getPassiveIncomeByAssetType,
+  getPassiveIncomeByType,
+  getPropertyTax,
   getTotalAssetsValue,
   getTotalExpenses,
+  inferDebtTypeFromLiability,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
+import { getAssetIcon } from '../Icons/GameIcons';
+import { RepayModal } from '../RepayModal/RepayModal';
 import styles from './FinancialStatement.module.css';
+import { ALL_ASSET_TYPES } from '../../types/game';
 
 interface FinancialStatementProps {
   player: Player;
   onClose: () => void;
+  canRepay?: boolean;
 }
 
-export function FinancialStatement({ player, onClose }: FinancialStatementProps) {
+function groupLiabilitiesByDebtType(liabilities: Liability[]): Map<DebtType, Liability[]> {
+  const groups = new Map<DebtType, Liability[]>();
+  for (const liability of liabilities) {
+    const debtType = inferDebtTypeFromLiability(liability);
+    const list = groups.get(debtType) ?? [];
+    list.push(liability);
+    groups.set(debtType, list);
+  }
+  return groups;
+}
+
+export function FinancialStatement({ player, onClose, canRepay = false }: FinancialStatementProps) {
   const { state } = useGame();
-  const profession = PROFESSIONS.find((p) => p.id === player.professionId);
+  const professionName = getPlayerProfessionName(player);
+  const incomeByType = getPassiveIncomeByType(player, state.cashFlowMultiplier, state.sectorMultiplier);
+  const incomeByAssetType = getPassiveIncomeByAssetType(player, state.cashFlowMultiplier, state.sectorMultiplier);
+  const propertyTax = getPropertyTax(player);
+  const liabilityGroups = useMemo(() => groupLiabilitiesByDebtType(player.liabilities), [player.liabilities]);
+
+  const [repayTarget, setRepayTarget] = useState<Liability | null>(null);
+  const monthlyCashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -40,11 +72,21 @@ export function FinancialStatement({ player, onClose }: FinancialStatementProps)
             </div>
             <div className={styles.row}>
               <span>被动收入</span>
-              <span>{formatCurrency(getPassiveIncome(player))}</span>
+              <span>{formatCurrency(getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier))}</span>
             </div>
+            {Object.entries(incomeByType)
+              .filter(([, v]) => v > 0)
+              .map(([type, amount]) => (
+                <div key={type} className={styles.subRow}>
+                  <span>└ {getIncomeTypeLabel(type as keyof typeof incomeByType)}</span>
+                  <span>{formatCurrency(amount)}</span>
+                </div>
+              ))}
             <div className={`${styles.row} ${styles.total}`}>
               <span>总收入</span>
-              <span>{formatCurrency(player.salary + getPassiveIncome(player))}</span>
+              <span>
+                {formatCurrency(player.salary + getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier))}
+              </span>
             </div>
           </section>
 
@@ -55,22 +97,6 @@ export function FinancialStatement({ player, onClose }: FinancialStatementProps)
               <span>{formatCurrency(player.expenses.tax)}</span>
             </div>
             <div className={styles.row}>
-              <span>房贷</span>
-              <span>{formatCurrency(player.expenses.mortgage)}</span>
-            </div>
-            <div className={styles.row}>
-              <span>学贷</span>
-              <span>{formatCurrency(player.expenses.studentLoan)}</span>
-            </div>
-            <div className={styles.row}>
-              <span>车贷</span>
-              <span>{formatCurrency(player.expenses.carLoan)}</span>
-            </div>
-            <div className={styles.row}>
-              <span>信用卡</span>
-              <span>{formatCurrency(player.expenses.creditCard)}</span>
-            </div>
-            <div className={styles.row}>
               <span>其他</span>
               <span>{formatCurrency(player.expenses.other)}</span>
             </div>
@@ -78,6 +104,35 @@ export function FinancialStatement({ player, onClose }: FinancialStatementProps)
               <span>子女支出（{player.children} × {formatCurrency(player.expenses.perChild)}）</span>
               <span>{formatCurrency(player.children * player.expenses.perChild)}</span>
             </div>
+            {propertyTax > 0 && (
+              <div className={styles.row}>
+                <span>房产税（持有 2 套及以上房产）</span>
+                <span>{formatCurrency(propertyTax)}</span>
+              </div>
+            )}
+            {Array.from(liabilityGroups.entries()).map(([debtType, items]) => {
+              const config = DEBT_TYPE_CONFIG[debtType];
+              const totalPayment = items.reduce((sum, l) => sum + l.monthlyPayment, 0);
+              return (
+                <div key={debtType} className={styles.liabilityGroup}>
+                  <div className={styles.row}>
+                    <span>
+                      {getDebtTypeLabel(debtType)}（{(config.monthlyRate * 100).toFixed(2)}%/月）
+                    </span>
+                    <span>{formatCurrency(totalPayment)}</span>
+                  </div>
+                  {items.map((liability) => (
+                    <div key={liability.id} className={styles.subRow}>
+                      <span>
+                        └ {liability.name} · 本金 {formatCurrency(liability.principal)} · 已还{' '}
+                        {liability.paidPeriods ?? 0} 期
+                      </span>
+                      <span>{formatCurrency(liability.monthlyPayment)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
             <div className={`${styles.row} ${styles.total}`}>
               <span>总支出</span>
               <span>{formatCurrency(getTotalExpenses(player))}</span>
@@ -88,23 +143,59 @@ export function FinancialStatement({ player, onClose }: FinancialStatementProps)
             <h3>现金流</h3>
             <div className={`${styles.row} ${styles.total}`}>
               <span>月现金流</span>
-              <span className={getMonthlyCashFlow(player) >= 0 ? styles.positive : styles.negative}>
-                {formatCurrency(getMonthlyCashFlow(player))}
+              <span
+                className={
+                  monthlyCashFlow >= 0 ? styles.positive : styles.negative
+                }
+              >
+                {formatCurrency(monthlyCashFlow)}
               </span>
             </div>
           </section>
 
           <section className={styles.section}>
-            <h3>资产</h3>
+            <h3>资产分类汇总</h3>
+            {ALL_ASSET_TYPES.filter((t) => (incomeByAssetType[t] ?? 0) > 0 || player.assets.some((a) => a.type === t)).map(
+              (type) => {
+                const typeAssets = player.assets.filter((a) => a.type === type);
+                const typeValue = typeAssets.reduce(
+                  (sum, a) => sum + getAssetMarketValue(a, state.marketMultiplier[type], state.sectorMultiplier),
+                  0
+                );
+                return (
+                  <div key={type} className={styles.categoryRow}>
+                    <span>
+                      {getAssetIcon(type)} {getAssetTypeLabel(type)}（{typeAssets.length}）
+                    </span>
+                    <span>
+                      市值 {formatCurrency(typeValue)} / 月收 {formatCurrency(incomeByAssetType[type] ?? 0)}
+                    </span>
+                  </div>
+                );
+              }
+            )}
+            {player.assets.length === 0 && <div className={styles.empty}>暂无资产</div>}
+          </section>
+
+          <section className={styles.section}>
+            <h3>资产明细</h3>
             {player.assets.length === 0 ? (
               <div className={styles.empty}>暂无资产</div>
             ) : (
               player.assets.map((asset) => (
                 <div key={asset.id} className={styles.assetRow}>
-                  <div>{asset.name}</div>
+                  <div>
+                    {getAssetIcon(asset.type)} {asset.name}
+                    {asset.metadata?.sector && <span className={styles.sectorTag}>{asset.metadata.sector}</span>}
+                  </div>
                   <div className={styles.assetMeta}>
                     <span>基础市值 {formatCurrency(asset.marketValue)}</span>
-                    <span>当前市值 {formatCurrency(getAssetMarketValue(asset, state.marketMultiplier[asset.type]))}</span>
+                    <span>
+                      当前市值{' '}
+                      {formatCurrency(
+                        getAssetMarketValue(asset, state.marketMultiplier[asset.type], state.sectorMultiplier)
+                      )}
+                    </span>
                     <span>月现金流 +{formatCurrency(asset.cashFlow)}</span>
                   </div>
                 </div>
@@ -113,16 +204,36 @@ export function FinancialStatement({ player, onClose }: FinancialStatementProps)
           </section>
 
           <section className={styles.section}>
-            <h3>负债</h3>
+            <h3>负债明细</h3>
             {player.liabilities.length === 0 ? (
               <div className={styles.empty}>暂无负债</div>
             ) : (
-              player.liabilities.map((liability) => (
-                <div key={liability.id} className={styles.row}>
-                  <span>{liability.name}</span>
-                  <span>{formatCurrency(liability.principal)}</span>
-                </div>
-              ))
+              player.liabilities.map((liability) => {
+                const debtType = inferDebtTypeFromLiability(liability);
+                const config = getDebtTypeConfig(debtType);
+                return (
+                  <div key={liability.id} className={styles.liabilityCard}>
+                    <div className={styles.liabilityHeader}>
+                      <span className={styles.liabilityName}>{liability.name}</span>
+                      <span className={styles.debtTypeBadge}>{getDebtTypeLabel(debtType)}</span>
+                    </div>
+                    <div className={styles.liabilityDetails}>
+                      <span>月利率 {(config.monthlyRate * 100).toFixed(2)}%</span>
+                      <span>本金 {formatCurrency(liability.principal)}</span>
+                      <span>月供 {formatCurrency(liability.monthlyPayment)}</span>
+                      <span>已还 {liability.paidPeriods ?? 0} 期</span>
+                    </div>
+                    {canRepay && liability.principal > 0 && (
+                      <button
+                        className={`${styles.repayButton} cartoon-button`}
+                        onClick={() => setRepayTarget(liability)}
+                      >
+                        💰 偿还本金
+                      </button>
+                    )}
+                  </div>
+                );
+              })
             )}
           </section>
 
@@ -130,24 +241,34 @@ export function FinancialStatement({ player, onClose }: FinancialStatementProps)
             <h3>关键指标</h3>
             <div className={styles.row}>
               <span>净资产</span>
-              <span>{formatCurrency(getNetWorth(player, state.marketMultiplier))}</span>
+              <span>{formatCurrency(getNetWorth(player, state.marketMultiplier, state.sectorMultiplier))}</span>
             </div>
             <div className={styles.row}>
               <span>资产总市值</span>
-              <span>{formatCurrency(getTotalAssetsValue(player, state.marketMultiplier))}</span>
+              <span>{formatCurrency(getTotalAssetsValue(player, state.marketMultiplier, state.sectorMultiplier))}</span>
             </div>
             <div className={styles.row}>
               <span>财务自由进度</span>
               <span>
-                {formatCurrency(getPassiveIncome(player))} / {formatCurrency(getTotalExpenses(player))}
+                {formatCurrency(getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier))} /{' '}
+                {formatCurrency(getTotalExpenses(player))}
               </span>
             </div>
             <div className={styles.row}>
               <span>职业</span>
-              <span>{profession?.name}</span>
+              <span>{professionName}</span>
             </div>
           </section>
         </div>
+
+        {repayTarget && (
+          <RepayModal
+            player={player}
+            initialLiability={repayTarget}
+            nested
+            onClose={() => setRepayTarget(null)}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-import type { SpaceType } from '../../types/game';
+import type { AssetType } from '../../types/game';
 
-export const SPACE_ICONS: Record<SpaceType, string> = {
+export const SPACE_ICONS: Record<string, string> = {
   payday: '💰',
   opportunity: '💼',
   market: '📈',
@@ -10,10 +10,16 @@ export const SPACE_ICONS: Record<SpaceType, string> = {
   settlement: '🏛️',
 };
 
-export const ASSET_ICONS: Record<string, string> = {
+export const ASSET_ICONS: Record<AssetType, string> = {
   stock: '📊',
+  bond: '📜',
+  reit: '🏢',
+  commodity: '🥇',
+  derivative: '📉',
+  overseas: '🌏',
+  entity: '🏪',
   realEstate: '🏠',
-  business: '🏪',
+  business: '🏭',
   intellectual: '📚',
 };
 
@@ -38,8 +44,20 @@ export const PROFESSION_AVATARS: Record<string, string> = {
   security: '👮',
   lawyer: '👩‍⚖️',
   pilot: '👨‍✈️',
+  nurse: '👩‍⚕️',
+  accountant: '🧮',
+  designer: '🎨',
+  sales: '📣',
+  delivery: '🛵',
+  factory: '🏭',
+  freelancer: '💻',
+  custom: '✨',
 };
 
-export function getSpaceIcon(type: SpaceType): string {
-  return SPACE_ICONS[type];
+export function getSpaceIcon(type: string): string {
+  return SPACE_ICONS[type] ?? '❓';
+}
+
+export function getAssetIcon(type: AssetType): string {
+  return ASSET_ICONS[type] ?? '💼';
 }

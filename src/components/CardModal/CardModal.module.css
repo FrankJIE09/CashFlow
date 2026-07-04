@@ -249,3 +249,51 @@
   transform: translateY(4px);
   box-shadow: 0 0 0 rgba(0, 0, 0, 0.08);
 }
+
+.fundamentals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.fundTag {
+  background: #E8F4FD;
+  color: #2980b9;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(41, 128, 185, 0.2);
+}
+
+.gateInfo {
+  font-size: 13px;
+  color: #e67e22;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.blockedReason {
+  background: #FDEDEC;
+  color: #c0392b;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.impactList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.impactList span {
+  background: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+}

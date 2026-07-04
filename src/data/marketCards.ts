@@ -1,33 +1,13 @@
 import type { MarketCard } from '../types/game';
 
 export const MARKET_CARDS: MarketCard[] = [
+  // ── 保留原有交互型卡片 ──
   {
     id: 'market_boom',
     title: '经济繁荣',
     description: '房地产市场火热，所有房产增值 50%，买家求购。',
     type: 'market',
     effect: { type: 'assetAppreciation', targetAssetType: 'realEstate', multiplier: 1.5 },
-  },
-  {
-    id: 'market_rate_cut',
-    title: '央行降息',
-    description: '贷款利率下调，所有月供减少 20%（持续 3 回合）。',
-    type: 'market',
-    effect: { type: 'interestRate', rateChange: -0.02 },
-  },
-  {
-    id: 'market_recession',
-    title: '经济衰退',
-    description: '资产贬值 30%，现金流减少 20%。',
-    type: 'market',
-    effect: { type: 'assetDepreciation', multiplier: 0.7 },
-  },
-  {
-    id: 'market_tech_boom',
-    title: '科技行业利好',
-    description: '科技股翻倍，手中股票价值 ×2。',
-    type: 'market',
-    effect: { type: 'sectorBoom', sector: 'stock', multiplier: 2 },
   },
   {
     id: 'market_buyout',
@@ -42,5 +22,259 @@ export const MARKET_CARDS: MarketCard[] = [
     description: '房东急于出售，房产首付降至 5 折。',
     type: 'market',
     effect: { type: 'discount', targetAssetType: 'realEstate', discountRate: 0.5 },
+  },
+
+  // ── 宏观事件：经济危机 ──
+  {
+    id: 'crisis_2008',
+    title: '2008 全球金融危机',
+    description: '次贷危机引发全球流动性枯竭，风险资产暴跌，避险资产受追捧。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'globalLiquidity',
+      assetImpacts: {
+        stock: { priceChange: 0.55, cashFlowChange: 0.8 },
+        bond: { priceChange: 1.15 },
+        reit: { priceChange: 0.65, cashFlowChange: 0.85 },
+        commodity: { priceChange: 0.85 },
+        derivative: { priceChange: 0.5 },
+        overseas: { priceChange: 0.5, cashFlowChange: 0.8 },
+        entity: { priceChange: 0.7, cashFlowChange: 0.75 },
+        realEstate: { priceChange: 0.6, cashFlowChange: 0.8 },
+        business: { priceChange: 0.65, cashFlowChange: 0.75 },
+        intellectual: { priceChange: 0.8 },
+        金融: { priceChange: 0.45 },
+        科技: { priceChange: 0.5 },
+        贵金属: { priceChange: 1.2 },
+      },
+    },
+  },
+  {
+    id: 'crisis_2015',
+    title: '2015 A股杠杆股灾',
+    description: '杠杆资金踩踏出逃，A股暴跌，高估值成长股重创。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'economicCycle',
+      assetImpacts: {
+        stock: { priceChange: 0.5, cashFlowChange: 0.9 },
+        derivative: { priceChange: 0.6 },
+        overseas: { priceChange: 0.85 },
+        reit: { priceChange: 0.9 },
+        科技: { priceChange: 0.4 },
+        新能源: { priceChange: 0.45 },
+        消费: { priceChange: 0.75 },
+      },
+    },
+  },
+
+  // ── 产业周期 ──
+  {
+    id: 'ai_boom',
+    title: 'AI 产业繁荣 / 算力周期',
+    description: '大模型与算力基建爆发，科技、新能源板块领涨。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'industryTrend',
+      assetImpacts: {
+        stock: { priceChange: 1.15 },
+        overseas: { priceChange: 1.3, cashFlowChange: 1.1 },
+        科技: { priceChange: 1.8, cashFlowChange: 1.2 },
+        新能源: { priceChange: 1.5, cashFlowChange: 1.15 },
+        先进制造: { priceChange: 1.4 },
+        commodity: { priceChange: 1.1 },
+      },
+    },
+  },
+  {
+    id: 'new_quality_productivity',
+    title: '新质生产力产业周期',
+    description: '政策推动高端制造与数字经济，先进制造板块估值提升。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'policyRegulation',
+      assetImpacts: {
+        stock: { priceChange: 1.1 },
+        entity: { priceChange: 1.15, cashFlowChange: 1.1 },
+        先进制造: { priceChange: 1.5, cashFlowChange: 1.2 },
+        新能源: { priceChange: 1.25 },
+        科技: { priceChange: 1.2 },
+      },
+    },
+  },
+  {
+    id: 'internet_crackdown',
+    title: '互联网平台整改',
+    description: '平台经济监管趋严，互联网与平台类资产承压。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'policyRegulation',
+      assetImpacts: {
+        stock: { priceChange: 0.9 },
+        overseas: { priceChange: 0.85 },
+        科技: { priceChange: 0.7, cashFlowChange: 0.85 },
+        business: { priceChange: 0.8, cashFlowChange: 0.9 },
+      },
+    },
+  },
+
+  // ── 利率周期 ──
+  {
+    id: 'domestic_rate_cut',
+    title: '国内降息周期',
+    description: '央行连续降息，债券价格上涨，地产股回暖，高股息受追捧。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'economicCycle',
+      rateChange: -0.015,
+      assetImpacts: {
+        bond: { priceChange: 1.12, cashFlowChange: 0.95 },
+        reit: { priceChange: 1.1, cashFlowChange: 1.05 },
+        realEstate: { priceChange: 1.15, cashFlowChange: 1.05 },
+        stock: { priceChange: 1.08 },
+        金融: { priceChange: 1.05 },
+        利率债: { priceChange: 1.15 },
+        REITs: { priceChange: 1.12 },
+      },
+    },
+  },
+  {
+    id: 'domestic_rate_hike',
+    title: '国内加息周期',
+    description: '通胀压力上升，央行加息，债券与成长股承压。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'economicCycle',
+      rateChange: 0.015,
+      assetImpacts: {
+        bond: { priceChange: 0.92, cashFlowChange: 1.05 },
+        stock: { priceChange: 0.9, cashFlowChange: 0.95 },
+        reit: { priceChange: 0.95 },
+        realEstate: { priceChange: 0.88, cashFlowChange: 0.95 },
+        科技: { priceChange: 0.85 },
+        利率债: { priceChange: 0.9 },
+      },
+    },
+  },
+  {
+    id: 'fed_rate_cut',
+    title: '美联储降息周期',
+    description: '美联储开启降息，全球流动性改善，海外资产与大宗商品受益。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'globalLiquidity',
+      rateChange: -0.01,
+      assetImpacts: {
+        overseas: { priceChange: 1.2, cashFlowChange: 1.05 },
+        commodity: { priceChange: 1.15 },
+        stock: { priceChange: 1.05 },
+        bond: { priceChange: 1.03 },
+        贵金属: { priceChange: 1.25 },
+        科技: { priceChange: 1.15 },
+      },
+    },
+  },
+
+  // ── 主题行情 ──
+  {
+    id: 'high_dividend_defense',
+    title: '高股息防御行情',
+    description: '市场避险情绪升温，高股息蓝筹与公用事业板块走强。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'industryTrend',
+      assetImpacts: {
+        stock: { priceChange: 1.05, cashFlowChange: 1.1 },
+        bond: { priceChange: 1.03 },
+        金融: { priceChange: 1.2, cashFlowChange: 1.15 },
+        公用事业: { priceChange: 1.25, cashFlowChange: 1.1 },
+        消费: { priceChange: 1.1 },
+        科技: { priceChange: 0.95 },
+        新能源: { priceChange: 0.9 },
+      },
+    },
+  },
+  {
+    id: 'global_inflation',
+    title: '全球通胀周期',
+    description: '大宗商品价格飙升，实物资产抗通胀，成长股估值承压。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'economicCycle',
+      assetImpacts: {
+        commodity: { priceChange: 1.35 },
+        realEstate: { priceChange: 1.1, cashFlowChange: 1.05 },
+        reit: { priceChange: 1.08 },
+        entity: { priceChange: 1.05, cashFlowChange: 1.08 },
+        贵金属: { priceChange: 1.3 },
+        stock: { priceChange: 0.95 },
+        bond: { priceChange: 0.9 },
+        科技: { priceChange: 0.85 },
+      },
+    },
+  },
+  {
+    id: 'reit_expansion',
+    title: '公募 REITs 扩募常态化',
+    description: 'REITs 市场扩容，物流与商业地产 REITs 估值提升、分红增加。',
+    type: 'market',
+    effect: {
+      type: 'macroEvent',
+      eventCategory: 'policyRegulation',
+      assetImpacts: {
+        reit: { priceChange: 1.2, cashFlowChange: 1.15 },
+        物流地产: { priceChange: 1.25, cashFlowChange: 1.2 },
+        商业地产: { priceChange: 1.15, cashFlowChange: 1.1 },
+        REITs: { priceChange: 1.2, cashFlowChange: 1.15 },
+      },
+    },
+  },
+
+  // ── 兼容旧卡 ──
+  {
+    id: 'market_rate_cut',
+    title: '央行降息',
+    description: '贷款利率下调，月供压力减轻。',
+    type: 'market',
+    effect: { type: 'interestRate', rateChange: -0.02 },
+  },
+  {
+    id: 'market_recession',
+    title: '经济衰退',
+    description: '资产贬值 30%，现金流减少 20%。',
+    type: 'market',
+    effect: {
+      type: 'assetDepreciation',
+      multiplier: 0.7,
+      assetImpacts: {
+        stock: { cashFlowChange: 0.8 },
+        bond: { cashFlowChange: 0.9 },
+        reit: { cashFlowChange: 0.8 },
+        commodity: { cashFlowChange: 0.85 },
+        derivative: { cashFlowChange: 0.75 },
+        overseas: { cashFlowChange: 0.8 },
+        entity: { cashFlowChange: 0.8 },
+        realEstate: { cashFlowChange: 0.8 },
+        business: { cashFlowChange: 0.8 },
+        intellectual: { cashFlowChange: 0.85 },
+      },
+    },
+  },
+  {
+    id: 'market_tech_boom',
+    title: '科技行业利好',
+    description: '科技股翻倍，手中股票价值 ×2。',
+    type: 'market',
+    effect: { type: 'sectorBoom', sector: 'stock', multiplier: 2 },
   },
 ];

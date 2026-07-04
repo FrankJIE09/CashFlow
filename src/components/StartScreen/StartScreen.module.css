@@ -164,6 +164,74 @@
   font-weight: 600;
 }
 
+.cityList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cityTierGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cityTierLabel {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-primary-dark);
+}
+
+.cityButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cityButton {
+  border: 2px solid #FFE8E8;
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: #FFF8F8;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cityButton:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+
+.selectedCity {
+  border-color: var(--color-primary);
+  background: linear-gradient(145deg, #FFF0F0 0%, #FFE8E8 100%);
+  box-shadow: 0 4px 0 var(--color-primary-dark);
+}
+
+.cityName {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.cityHint {
+  font-size: 11px;
+  color: #888;
+  font-weight: 600;
+}
+
+.tierBadge {
+  font-size: 10px;
+  background: #FFE66D;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-weight: 800;
+  margin-left: auto;
+}
+
 .preview {
   background: linear-gradient(145deg, #FFF8F0 0%, #FFF0F0 100%);
   border-radius: 18px;
@@ -244,4 +312,100 @@
   .previewGrid {
     grid-template-columns: 1fr;
   }
+
+  .customGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.customCard {
+  border-style: dashed;
+  background: linear-gradient(145deg, #FFFBF0 0%, #FFF5E8 100%);
+}
+
+.customBadge {
+  background: #8FD3FF;
+}
+
+.customForm {
+  background: linear-gradient(145deg, #FFFBF0 0%, #FFF0F5 100%);
+  border: 3px dashed rgba(255, 143, 163, 0.35);
+  border-radius: 18px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.customFormTitle {
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--color-primary-dark);
+}
+
+.customHint {
+  margin: 0;
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.customGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.customField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.customField label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.customField input {
+  padding: 12px;
+  border: 3px solid #FFE0E0;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  background: #FFF8F8;
+  color: var(--color-text);
+}
+
+.customField input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(255, 143, 163, 0.15);
+}
+
+.debtSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.debtTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.validationErrors {
+  background: #FFF0F0;
+  border: 2px solid #FF8FA3;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #C0392B;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
