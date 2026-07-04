@@ -82,11 +82,17 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
 
         <div className={styles.content}>
           <section className={styles.section}>
-            <h3>收入</h3>
+            <h3>收入 {player.marriageStatus === 'married' ? '（家庭合并）' : ''}</h3>
             <div className={styles.row}>
-              <span>工资收入</span>
+              <span>{player.marriageStatus === 'married' ? '家庭工资收入' : '工资收入'}</span>
               <span>{formatCurrency(player.salary)}</span>
             </div>
+            {player.marriageStatus === 'married' && player.familyIncome != null && (
+              <div className={styles.subRow}>
+                <span>└ 个人月薪 {formatCurrency(player.salary)}</span>
+                <span></span>
+              </div>
+            )}
             <div className={styles.row}>
               <span>被动收入</span>
               <span>{formatCurrency(getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier))}</span>
@@ -99,10 +105,32 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                   <span>{formatCurrency(amount)}</span>
                 </div>
               ))}
+            {/* 【v3.8】补贴收入 */}
+            {(player.childAges.length > 0 || player.maternitySubsidy > 0) && (
+              <>
+                {player.maternitySubsidy > 0 && (
+                  <div className={styles.row}>
+                    <span>产假补贴</span>
+                    <span className={styles.positive}>+{formatCurrency(player.maternitySubsidy)}</span>
+                  </div>
+                )}
+                {player.childAges.length > 0 && (
+                  <div className={styles.row}>
+                    <span>0-3岁育儿补贴（{player.childAges.length}人）</span>
+                    <span className={styles.positive}>+{formatCurrency(player.childAges.length * Math.round(200))}</span>
+                  </div>
+                )}
+              </>
+            )}
             <div className={`${styles.row} ${styles.total}`}>
               <span>总收入</span>
               <span>
-                {formatCurrency(player.salary + getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier))}
+                {formatCurrency(
+                  player.salary +
+                  getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier) +
+                  (player.maternitySubsidy ?? 0) +
+                  (player.childAges.length > 0 ? player.childAges.length * Math.round(200) : 0)
+                )}
               </span>
             </div>
           </section>

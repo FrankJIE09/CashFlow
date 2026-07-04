@@ -174,6 +174,19 @@
   color: #D63384;
 }
 
+.maternity {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.genderTag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-primary-dark);
+}
+
 .unemployed {
   background: #FFF3CD;
   color: #856404;
