@@ -4,6 +4,10 @@
 
 ## 在线体验
 
+**网页版（GitHub Pages）：** [https://FrankJIE09.github.io/CashFlow/](https://FrankJIE09.github.io/CashFlow/)
+
+本地开发：
+
 ```bash
 npm install
 npm run dev
