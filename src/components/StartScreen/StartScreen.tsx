@@ -9,7 +9,7 @@ import {
 } from '../../data/professions';
 import { CITIES, CITY_TIER_LABELS, DEFAULT_CITY_ID, getCityById } from '../../data/cities';
 import { useGameActions } from '../../hooks/useGameActions';
-import type { CityTier, CustomProfessionConfig, Difficulty } from '../../types/game';
+import type { CityTier, CustomProfessionConfig, Difficulty, PlayerGender } from '../../types/game';
 import { calcLiabilityMonthlyPayment } from '../../utils/financial';
 import { PROFESSION_AVATARS } from '../Icons/GameIcons';
 import styles from './StartScreen.module.css';
@@ -51,6 +51,7 @@ export function StartScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [aiCount, setAiCount] = useState(0);
   const [aiDifficulty, setAiDifficulty] = useState<Difficulty>('medium');
+  const [gender, setGender] = useState<PlayerGender>('male');
   const [testMode, setTestMode] = useState(false);
   const [testMaxRounds, setTestMaxRounds] = useState(50);
 
@@ -87,6 +88,7 @@ export function StartScreen() {
         humanProfessionId: CUSTOM_PROFESSION_ID,
         customProfession,
         cityId,
+        humanGender: gender,
         aiCount,
         aiDifficulty,
         testMode,
@@ -99,6 +101,7 @@ export function StartScreen() {
       humanPlayerName: name,
       humanProfessionId: professionId,
       cityId,
+      humanGender: gender,
       aiCount,
       aiDifficulty,
       testMode,
@@ -292,6 +295,26 @@ export function StartScreen() {
               )}
             </div>
           )}
+
+          <div className={styles.field}>
+            <label>玩家性别</label>
+            <div className={styles.genderToggle}>
+              <button
+                type="button"
+                className={`${styles.genderBtn} ${gender === 'male' ? styles.selectedGender : ''}`}
+                onClick={() => setGender('male')}
+              >
+                ♂ 男
+              </button>
+              <button
+                type="button"
+                className={`${styles.genderBtn} ${gender === 'female' ? styles.selectedGender : ''}`}
+                onClick={() => setGender('female')}
+              >
+                ♀ 女
+              </button>
+            </div>
+          </div>
 
           <div className={styles.field}>
             <label>AI 对手数量</label>
