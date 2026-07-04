@@ -1,9 +1,14 @@
-import type { BugLogEntry, GameAction, GameState } from '../types/game';
+import type { BugLogEntry, GameAction, GameState, Player } from '../types/game';
 import { checkBankruptcy, getMonthlyCashFlow, needsLiquidation, calcHighDebtHappinessPenalty } from './financial';
 import { generateId } from './random';
 
 const CHILDREN_LIMIT = 3;
 const DOODAD_CHILD_EXPENSE_IDS = new Set(['family_school_choice']);
+
+/** 【v3.8】辅助：检测玩家是否为女性且有无 0-3 岁子嗣 */
+function hasZeroToThreeChild(player: Player): boolean {
+  return player.gender === 'female' && player.childAges.length > 0;
+}
 
 function appendBug(
   state: GameState,
@@ -281,6 +286,49 @@ export function runTestValidators(
   next = validateFinancialSanity(next, prevState, action);
   next = validateBranchCoverage(next, prevState, action);
 
+  // 【v3.8】女性产检 & 产假验证
+  if (player && player.maternityLeaveRemaining > 0 && player.gender !== 'female') {
+    next = appendBug(next, {
+      category: 'data_invalid',
+      severity: 'critical',
+      message: `非女性玩家出现产假（maternityLeaveRemaining=${player.maternityLeaveRemaining}）`,
+      action: action.type,
+    });
+  }
+
+  // 【v3.8】女性 0-3 子嗣幸福度惩罚验证
+  if (player && hasZeroToThreeChild(player) && player.marriageHappiness > 100) {
+    next = appendBug(next, {
+      category: 'data_invalid',
+      severity: 'warning',
+      message: `女性 0-3 子嗣幸福度异常高：${player.marriageHappiness}`,
+      action: action.type,
+    });
+  }
+
+  // 【v3.8】childAges 不超出范围验证
+  if (player) {
+    const invalidAge = (player.childAges ?? []).find((a) => a < 0 || a > 36);
+    if (invalidAge !== undefined) {
+      next = appendBug(next, {
+        category: 'data_invalid',
+        severity: 'critical',
+        message: `childAges 超出 0-36 范围：${invalidAge}`,
+        action: action.type,
+      });
+    }
+  }
+
+  // 【v3.8】合并家庭现金流验证（已婚应有 familyIncome）
+  if (player && player.marriageStatus === 'married' && !player.familyIncome && !player.isRetired) {
+    next = appendBug(next, {
+      category: 'data_invalid',
+      severity: 'warning',
+      message: '已婚玩家无 familyIncome',
+      action: action.type,
+    });
+  }
+
   // 【新增】v3.7 子卡牌校验
   if (action.type === 'PAY_DOODAD' && prevState.currentCard?.type === 'doodad') {
     const doodadCard = prevState.currentCard;
@@ -331,8 +379,8 @@ export function runTestValidators(
     }
   }
 
-  // 【新增】v3.7 高负债幸福惩罚缺失
-  if (player) {
+  // 【新增】v3.7 高负债幸福惩罚缺失（仅在月度结算后检查）
+  if (player && action.type === 'MOVE_PLAYER') {
     const highDebtPenalty = calcHighDebtHappinessPenalty(player);
     if (highDebtPenalty > 0 && player.marriageStatus === 'married' && next.phase !== 'GAME_OVER') {
       if (!player.highDebtHappinessPenalty || player.highDebtHappinessPenalty <= 0) {
