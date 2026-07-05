@@ -112,6 +112,31 @@ export function RepayModal({ player, onClose, initialLiability = null, nested = 
                   step={100}
                   onChange={(e) => setRepayAmount(Math.max(0, Number(e.target.value)))}
                 />
+                <div className={styles.quickActions}>
+                  <button
+                    type="button"
+                    className={`${styles.quickBtn} cartoon-button`}
+                    onClick={() => setRepayAmount(Math.min(1000, repayTarget.principal))}
+                    disabled={repayTarget.principal < 1000}
+                  >
+                    1,000
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.quickBtn} cartoon-button`}
+                    onClick={() => setRepayAmount(Math.min(10000, repayTarget.principal))}
+                    disabled={repayTarget.principal < 10000}
+                  >
+                    10,000
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.fullRepayBtn} cartoon-button`}
+                    onClick={() => setRepayAmount(repayTarget.principal)}
+                  >
+                    全额还款
+                  </button>
+                </div>
               </label>
               <div className={styles.previewGrid}>
                 <div className={styles.previewItem}>

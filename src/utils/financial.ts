@@ -11,9 +11,12 @@ export const STOCK_STAMP_TAX_RATE = 0.001;
 /** 【新增】v3.1 股票交易佣金率 */
 export const STOCK_COMMISSION_RATE = 0.0003;
 
+/** 证券类资产类型（可按手数买卖） */
+const SECURITY_ASSET_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'bond', 'reit', 'overseas', 'derivative']);
+
 export function isStockLotAsset(asset: Asset): boolean {
   return (
-    asset.type === 'stock' &&
+    SECURITY_ASSET_TYPES.has(asset.type) &&
     asset.shareHand !== undefined &&
     asset.singlePrice !== undefined &&
     asset.singlePrice > 0
@@ -823,6 +826,25 @@ export function isGameAcquiredLiability(liability: Liability): boolean {
   );
 }
 
+/** 【新增】v3.10 计算玩家月租金支出 */
+export function getRentExpense(player: Player, cityId: string): number {
+  const city = getCityById(cityId);
+  const hasSelfLiving = player.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
+  if (hasSelfLiving) return 0;
+
+  const tier = player.rentTier ?? 'standard';
+  const tierMultipliers: Record<string, number> = { economy: 0.7, standard: 1.0, luxury: 1.5 };
+  const tierMult = tierMultipliers[tier] ?? 1.0;
+
+  const marryFactor = player.marriageStatus === 'married' ? 0.9 : 1.3;
+  const baseRent = city.rentBase ?? 3000;
+  let rent = Math.round(baseRent * marryFactor * tierMult);
+
+  if (player.children > 0) rent = Math.round(rent * (1 + player.children * 0.1));
+
+  return rent;
+}
+
 /** 总支出 = 全部负债月供 + 非负债固定支出（不含 expenses.mortgage 等遗留字段，避免重复） */
 export function getFixedExpenses(player: Player): number {
   const liabilityPayments = player.liabilities.reduce((sum, l) => sum + l.monthlyPayment, 0);
@@ -838,7 +860,7 @@ export function getFixedExpenses(player: Player): number {
     player.children * (player.expenses.perChild + tempChildBoost) +
     pregnancyMedical +
     elderlyMedical;
-  return liabilityPayments + nonDebtFixed;
+  return liabilityPayments + nonDebtFixed + getRentExpense(player, player.cityId);
 }
 
 export function getGameAcquiredLoanPayments(player: Player): number {
@@ -1267,6 +1289,30 @@ export function calcCurrentStockPrice(asset: Asset): number {
     return Math.round((intrinsicPrice * currentPe) / basePe);
   }
   return asset.singlePrice ?? 0;
+}
+
+/** 获取证券当前PB（市净率），取自 metadata.pb */
+export function getStockCurrentPb(asset: Asset): number | undefined {
+  return asset.metadata?.pb;
+}
+
+/** 获取证券买入时的每份单价（回退到 singlePrice） */
+export function getStockBuyPrice(asset: Asset): number {
+  return asset.originalSinglePrice ?? asset.singlePrice ?? 0;
+}
+
+/** 计算证券价格涨跌百分比（现价 vs 买入价） */
+export function getStockPriceChange(asset: Asset): number {
+  const buyPrice = getStockBuyPrice(asset);
+  if (buyPrice <= 0) return 0;
+  const curPrice = calcCurrentStockPrice(asset);
+  return Math.round(((curPrice - buyPrice) / buyPrice) * 10000) / 100;
+}
+
+/** 获取证券当前每份实时价格（带乘数） */
+export function getStockCurrentPriceWithMultiplier(asset: Asset, priceMultiplier = 1): number {
+  const basePrice = calcCurrentStockPrice(asset);
+  return Math.round(basePrice * priceMultiplier);
 }
 
 /**

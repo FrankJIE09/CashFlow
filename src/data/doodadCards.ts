@@ -77,6 +77,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     monthlyCost: 2000,
     happinessDelta: -15,
     isFamilyEvent: true,
+    filterConfig: { minAge: 25 },
   },
   {
     id: 'family_spouse_unemployed',
@@ -88,6 +89,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     partnerUnemploymentTurns: 3,
     happinessDelta: -20,
     isFamilyEvent: true,
+    filterConfig: { marriageStatus: 'married' },
   },
   {
     id: 'family_elder_care',
@@ -99,6 +101,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     monthlyCost: 1500,
     happinessDelta: -5,
     isFamilyEvent: true,
+    filterConfig: { minAge: 25 },
   },
   {
     id: 'family_house_repair',
@@ -130,6 +133,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     monthlyCost: 800,
     happinessDelta: -10,
     isFamilyEvent: true,
+    filterConfig: { minAge: 20 },
   },
   {
     id: 'family_school_choice',
@@ -142,6 +146,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     tempExpenseTurns: 6,
     happinessDelta: -5,
     isFamilyEvent: true,
+    filterConfig: { minChildren: 1 },
   },
   {
     id: 'family_pet_illness',
@@ -241,6 +246,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     deductible: 2000,
     happinessDelta: -10,
     isFamilyEvent: true,
+    filterConfig: { minAge: 25 },
   },
   // 【新增】v3.8 产后康复卡（仅限女性触发）
   {
@@ -252,6 +258,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     isRecurring: false,
     happinessDelta: -5,
     genderRequired: 'female',
+    filterConfig: { gender: 'female' },
     isFamilyEvent: true,
   },
   // 【新增】v3.8 母婴医疗保险卡
@@ -266,5 +273,6 @@ export const DOODAD_CARDS: DoodadCard[] = [
     insuranceType: 'maternal',
     insuranceMonthlyPremium: 400,
     happinessDelta: 2,
+    filterConfig: { gender: 'female' },
   },
 ];

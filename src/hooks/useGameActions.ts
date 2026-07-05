@@ -144,6 +144,10 @@ export function useGameActions() {
     dispatch({ type: 'MANUAL_SELL_STOCK', payload: { assetId, sellHand } });
   }, [dispatch]);
 
+  const setRentTier = useCallback((tier: 'economy' | 'standard' | 'luxury') => {
+    dispatch({ type: 'SET_RENT_TIER', payload: { tier } });
+  }, [dispatch]);
+
   return {
     setupGame,
     restartGame,
@@ -174,6 +178,7 @@ export function useGameActions() {
     liquidateAsset,
     confirmCashFlowSettlement,
     sellStockManually,
+    setRentTier,
   };
 }
 

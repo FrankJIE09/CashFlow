@@ -565,15 +565,23 @@ export function CardModal() {
               </div>
             )}
             <div className={styles.marketInfo}>
-              <div>当前市场乘数（部分）</div>
+              <div>📊 当前市场状况</div>
               <div className={styles.marketMultipliers}>
-                {(['stock', 'bond', 'reit', 'realEstate', 'overseas'] as AssetType[]).map((type) => (
-                  <span key={type}>
-                    {getAssetTypeLabel(type)}: {state.marketMultiplier[type].toFixed(2)}
+                {(['stock', 'bond', 'reit', 'realEstate', 'entity', 'commodity', 'overseas', 'derivative'] as AssetType[]).map((type) => (
+                  <span key={type} className={
+                    state.marketMultiplier[type] > 1.01 ? styles.multUp :
+                    state.marketMultiplier[type] < 0.99 ? styles.multDown :
+                    undefined
+                  }>
+                    {getAssetTypeLabel(type)}: ×{state.marketMultiplier[type].toFixed(2)}
                   </span>
                 ))}
               </div>
-              <div>当前利率: {(state.interestRate * 100).toFixed(1)}%</div>
+              <div className={styles.rateDisplay}>
+                基准利率: <strong>{(state.interestRate * 100).toFixed(1)}%</strong>
+                {state.interestRate > 0.05 && <span className={styles.rateHigh}> ⚠️ 高息环境</span>}
+                {state.interestRate < 0.015 && <span className={styles.rateLow}> ✅ 低息环境</span>}
+              </div>
             </div>
             <div className={styles.actions}>
               <button className={styles.primaryButton} onClick={actions.applyMarketEffect}>
@@ -586,6 +594,7 @@ export function CardModal() {
     }
 
   if (card.type === 'doodad') {
+    const isInsuranceCard = (card as any).insuranceType != null && (card as any).insuranceMonthlyPremium != null;
     const shortfall = card.cost - player.cash;
     const canPay = player.cash >= card.cost;
     const canLoan = shortfall > 0;
@@ -596,21 +605,34 @@ export function CardModal() {
           <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>额外支出</div>
           <h2 className={styles.title}>{card.title}</h2>
           <p className={styles.description}>{card.description}</p>
-          <div className={styles.costInfo}>
-            <span>需要支付：</span>
-            <span className={styles.cost}>{formatCurrency(card.cost)}</span>
-          </div>
-          {card.isRecurring && card.monthlyCost && (
+          {isInsuranceCard ? (
+            <div className={styles.costInfo}>
+              <span>月缴保费：</span>
+              <span className={styles.cost}>{formatCurrency((card as any).insuranceMonthlyPremium!)}</span>
+              <div className={styles.recurringInfo}>无首付，确认后次月起每月自动扣缴</div>
+            </div>
+          ) : (
+            <div className={styles.costInfo}>
+              <span>需要支付：</span>
+              <span className={styles.cost}>{formatCurrency(card.cost)}</span>
+            </div>
+          )}
+          {card.isRecurring && card.monthlyCost && !isInsuranceCard && (
             <div className={styles.recurringInfo}>此外每月增加支出 {formatCurrency(card.monthlyCost)}</div>
           )}
           <div className={styles.actions}>
             <button
               className={styles.primaryButton}
               onClick={actions.payDoodad}
-              disabled={!canPay && !canLoan}
+              disabled={!canPay && !canLoan && !isInsuranceCard}
             >
-              {canPay ? '支付' : `贷款支付 ${formatCurrency(shortfall)}`}
+              {isInsuranceCard ? '确认投保' : canPay ? '支付' : `贷款支付 ${formatCurrency(shortfall)}`}
             </button>
+            {isInsuranceCard && (
+              <button className={styles.secondaryButton} onClick={actions.declineCard}>
+                跳过
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -649,7 +671,7 @@ export function CardModal() {
           {isStock && (
             <div className={styles.gateInfo}>
               <label>
-                买入手数（整数，1手=100股）：
+                买入手数（整数，1手=100份）：
                 <input
                   type="number"
                   min={1}
@@ -675,6 +697,7 @@ export function CardModal() {
               {meta.sector && <span className={styles.fundTag}>{meta.sector}</span>}
               {meta.liquidity && <span className={styles.fundTag}>{meta.liquidity}</span>}
               {meta.peTTM && <span className={styles.fundTag}>PE {meta.peTTM}</span>}
+              {meta.pb && <span className={styles.fundTag}>PB {meta.pb}</span>}
               {meta.dividendYield && (
                 <span className={styles.fundTag}>股息 {(meta.dividendYield * 100).toFixed(1)}%</span>
               )}
@@ -725,6 +748,12 @@ export function CardModal() {
               <span>总价</span>
               <span>{formatCurrency(asset.cost)}</span>
             </div>
+            {isStock && (
+              <div className={styles.assetRow}>
+                <span>单价</span>
+                <span>{formatCurrency(asset.singlePrice ?? 0)}/份</span>
+              </div>
+            )}
             <div className={styles.assetRow}>
               <span>首付/本金</span>
               <span className={styles.highlight}>
@@ -750,6 +779,17 @@ export function CardModal() {
                 {lotPrincipal > 0 ? ((lotCashFlow / lotPrincipal) * 100).toFixed(1) : '0'}%
               </span>
             </div>
+            {isStock && asset.basePe != null && (
+              <div className={styles.assetRow}>
+                <span>估值</span>
+                <span>
+                  PE {asset.currentPe?.toFixed(1) ?? asset.basePe.toFixed(1)} /
+                  中枢 {asset.basePe.toFixed(1)}
+                  {asset.metadata?.pb != null && ` / PB ${asset.metadata.pb}`}
+                  {asset.intrinsicPrice != null && ` / 内在价 ${formatCurrency(asset.intrinsicPrice)}`}
+                </span>
+              </div>
+            )}
           </div>
 
           {!purchaseGate.allowed && (

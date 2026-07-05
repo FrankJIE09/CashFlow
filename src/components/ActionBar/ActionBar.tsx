@@ -12,7 +12,7 @@ import { STATUS_ICONS } from '../Icons/GameIcons';
 import { RepayModal } from '../RepayModal/RepayModal';
 import styles from './ActionBar.module.css';
 
-export function ActionBar() {
+export function ActionBar({ onOpenAssetCenter }: { onOpenAssetCenter?: () => void }) {
   const { state } = useGame();
   const actions = useGameActions();
   const { play } = useSound();
@@ -134,6 +134,13 @@ export function ActionBar() {
             title={canRepay ? '提前偿还负债本金' : '回合结束阶段且有可还负债时可用'}
           >
             💳 偿还本金
+          </button>
+          <button
+            className={`${styles.financeButton} cartoon-button`}
+            onClick={() => onOpenAssetCenter?.()}
+            style={{ background: '#2ecc71', color: '#fff' }}
+          >
+            📋 资产中心
           </button>
           <span className={styles.loanInfo}>
             贷款无上限 · 当前负债 {formatCurrency(getCurrentDebt(player))}

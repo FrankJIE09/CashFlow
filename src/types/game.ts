@@ -135,6 +135,8 @@ export interface City {
   propertyTaxRate: number;
   downPaymentFirst: number;
   downPaymentSecond: number;
+  /** 【新增】v3.10 基准月租金 */
+  rentBase?: number;
 }
 
 export type ProfessionTier = 'elite' | 'professional' | 'service' | 'basic';
@@ -207,6 +209,8 @@ export interface Asset {
   /** 【新增】v3.6 买入时的 PE */
   buyPe?: number;
   metadata?: AssetMetadata;
+  /** 【新增】v3.10 是否为自住居所 */
+  isSelfLiving?: boolean;
 }
 
 export interface Liability {
@@ -223,6 +227,8 @@ export interface Liability {
   prepaymentPenaltyRate?: number;
   /** profession = 职业初始负债；game = 游戏中新增贷款 */
   source?: 'profession' | 'game';
+  /** 【新增】v3.10 抵押资产ID，卖出/变卖时先还贷再给净值 */
+  securedAssetId?: string;
 }
 
 /** 开局自定义职业配置（tier2 基准数值，按城市乘数调整） */
@@ -335,6 +341,10 @@ export interface Player {
   dinkElderlyCareExpense: number;
   /** 【新增】v3.7 高负债幸福惩罚累计值 */
   highDebtHappinessPenalty: number;
+  /** 【新增】v3.10 租房档位：'economy'/'standard'/'luxury' */
+  rentTier?: 'economy' | 'standard' | 'luxury';
+  /** 【新增】v3.10 月租金支出 */
+  rentExpense?: number;
 }
 
 export interface Space {
@@ -417,6 +427,19 @@ export interface DoodadCard extends BaseCard {
   insuranceMonthlyPremium?: number;
   /** 【新增】v3.8 仅特定性别触发（如产后康复仅女性） */
   genderRequired?: 'male' | 'female';
+  /** 【新增】v3.10 身份前置过滤 */
+  filterConfig?: {
+    minAge?: number;
+    maxAge?: number;
+    marriageStatus?: 'single' | 'married' | 'divorced' | 'ineligible';
+    minChildren?: number;
+    maxChildren?: number;
+    gender?: 'male' | 'female';
+    /** true=仅退休触发 false=仅未退休触发 undefined=不限 */
+    retired?: boolean;
+    /** true=仅失业触发 false=仅在职触发 undefined=不限 */
+    unemployed?: boolean;
+  };
 }
 
 export type Card = OpportunityCard | MarketCard | DoodadCard;
@@ -552,4 +575,5 @@ export type GameAction =
   | { type: 'CONFIRM_CASH_FLOW_SETTLEMENT' }
   | { type: 'DECLARE_BANKRUPTCY' }
   | { type: 'MANUAL_SELL_STOCK'; payload: { assetId: string; sellHand: number } }
-  | { type: 'STOP_AUTO_TEST' };
+  | { type: 'STOP_AUTO_TEST' }
+  | { type: 'SET_RENT_TIER'; payload: { tier: 'economy' | 'standard' | 'luxury' } };

@@ -122,6 +122,44 @@
   font-weight: 700;
 }
 
+.quickActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.quickBtn,
+.fullRepayBtn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 10px;
+  border: 2px solid rgba(203, 164, 233, 0.35);
+  background: #FFF8F0;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.quickBtn:hover,
+.fullRepayBtn:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-purple);
+}
+
+.quickBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.fullRepayBtn {
+  background: linear-gradient(145deg, #a29bfe, #6c5ce7);
+  color: #fff;
+  border-color: transparent;
+}
+
 .previewGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

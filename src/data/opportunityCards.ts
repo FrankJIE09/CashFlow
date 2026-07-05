@@ -143,6 +143,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 10200,
       shares: 100,
+      shareHand: 1,
+      singlePrice: 102,
+      yearDivPerShare: 4.2,
       metadata: {
         sector: '利率债',
         ticker: '159650',
@@ -270,6 +273,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 10500,
       shares: 100,
+      shareHand: 1,
+      singlePrice: 105,
+      yearDivPerShare: 3.84,
       metadata: {
         sector: '信用债',
         ticker: '511060',
@@ -392,6 +398,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 11000,
       shares: 1000,
+      shareHand: 1,
+      singlePrice: 110,
+      yearDivPerShare: 7.44,
       metadata: {
         sector: '新能源',
         ticker: '508096',
@@ -422,6 +431,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 12000,
       shares: 1000,
+      shareHand: 1,
+      singlePrice: 120,
+      yearDivPerShare: 7.8,
       metadata: {
         sector: '物流地产',
         ticker: '508097',
@@ -452,6 +464,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 15000,
       shares: 1000,
+      shareHand: 1,
+      singlePrice: 150,
+      yearDivPerShare: 9.6,
       metadata: {
         sector: '商业地产',
         ticker: '508000',
@@ -637,6 +652,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 10800,
       shares: 10,
+      shareHand: 1,
+      singlePrice: 108,
+      yearDivPerShare: 1.08,
       metadata: {
         sector: '先进制造',
         ticker: '118042',
@@ -665,7 +683,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'entity',
       cost: 28000,
       downPayment: 10000,
-      cashFlow: 650,
+      cashFlow: 220,
       mortgage: 18000,
       marketValue: 28000,
       metadata: {
@@ -690,7 +708,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'entity',
       cost: 45000,
       downPayment: 15000,
-      cashFlow: 900,
+      cashFlow: 275,
       mortgage: 30000,
       marketValue: 45000,
       metadata: {
@@ -715,7 +733,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'entity',
       cost: 80000,
       downPayment: 25000,
-      cashFlow: 1500,
+      cashFlow: 485,
       mortgage: 55000,
       marketValue: 80000,
       metadata: {
@@ -740,7 +758,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'entity',
       cost: 35000,
       downPayment: 12000,
-      cashFlow: 800,
+      cashFlow: 215,
       mortgage: 23000,
       marketValue: 35000,
       metadata: {
@@ -765,7 +783,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'intellectual',
       cost: 10000,
       downPayment: 2000,
-      cashFlow: 150,
+      cashFlow: 75,
       mortgage: 8000,
       marketValue: 10000,
       metadata: {
@@ -803,6 +821,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 15000,
       shares: 10000,
+      shareHand: 1,
+      singlePrice: 150,
+      yearDivPerShare: 3.0,
       metadata: {
         sector: '科技',
         ticker: '159509',
@@ -835,6 +856,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 18000,
       shares: 12000,
+      shareHand: 1,
+      singlePrice: 180,
+      yearDivPerShare: 3.6,
       metadata: {
         sector: '宽基',
         ticker: '513500',
@@ -870,6 +894,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       mortgage: 0,
       marketValue: 50000,
       shares: 5000,
+      shareHand: 1,
+      singlePrice: 500,
+      yearDivPerShare: 33.6,
       metadata: {
         sector: '物流地产',
         ticker: '508056',
@@ -899,6 +926,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       cashFlow: 160,
       mortgage: 0,
       marketValue: 30000,
+      shareHand: 1,
+      singlePrice: 300,
+      yearDivPerShare: 19.2,
       metadata: {
         sector: 'REITs',
         liquidity: 'T+1',
@@ -926,7 +956,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'realEstate',
       cost: 800000,
       downPayment: 160000,
-      cashFlow: 12000,
+      cashFlow: 1550,
       mortgage: 640000,
       marketValue: 800000,
       metadata: {
@@ -952,7 +982,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'realEstate',
       cost: 200000,
       downPayment: 40000,
-      cashFlow: 3600,
+      cashFlow: 470,
       mortgage: 160000,
       marketValue: 200000,
       metadata: {
@@ -1034,7 +1064,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       type: 'entity',
       cost: 500000,
       downPayment: 80000,
-      cashFlow: 10000,
+      cashFlow: 1950,
       mortgage: 420000,
       marketValue: 500000,
       metadata: {

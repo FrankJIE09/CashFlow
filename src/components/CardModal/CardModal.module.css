@@ -156,6 +156,34 @@
   font-size: 12px;
 }
 
+.multUp {
+  border-color: #e74c3c !important;
+  background: #fff5f5 !important;
+  color: #e74c3c;
+}
+
+.multDown {
+  border-color: #27ae60 !important;
+  background: #f0faf4 !important;
+  color: #27ae60;
+}
+
+.rateDisplay {
+  font-size: 13px;
+  margin-top: 6px;
+  color: #555;
+}
+
+.rateHigh {
+  color: #e74c3c;
+  font-size: 12px;
+}
+
+.rateLow {
+  color: #27ae60;
+  font-size: 12px;
+}
+
 .emptyAssets {
   color: var(--color-text-light);
   font-weight: 700;

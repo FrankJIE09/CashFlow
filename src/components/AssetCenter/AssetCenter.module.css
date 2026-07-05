@@ -1,0 +1,262 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(74, 74, 74, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: var(--color-white);
+  border-radius: 28px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  padding: 30px;
+  box-shadow: 0 12px 0 rgba(0, 0, 0, 0.08), 0 24px 60px rgba(0, 0, 0, 0.2);
+  border: 4px solid rgba(0, 0, 0, 0.05);
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.header h2 {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  color: #999;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+.section {
+  margin-bottom: 24px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.assetCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fafafa;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  border: 1px solid #eee;
+}
+
+.assetInfo {
+  flex: 1;
+}
+
+.assetName {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assetMeta {
+  font-size: 13px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.assetActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sellBtn {
+  padding: 6px 14px;
+  border: 2px solid #e74c3c;
+  border-radius: 8px;
+  background: #fff;
+  color: #e74c3c;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.sellBtn:hover {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.selfLivingTag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #2ecc71;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+  font-size: 14px;
+}
+
+/* Rent Settings */
+.rentSettings {
+  background: linear-gradient(135deg, #fef9e7, #fdebd0);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.rentSettingsTitle {
+  font-weight: 700;
+  font-size: 16px;
+  margin: 0 0 4px;
+  color: var(--color-text);
+}
+
+.rentSettingsDesc {
+  font-size: 13px;
+  color: #666;
+  margin: 0 0 12px;
+}
+
+.rentTierOptions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rentTierBtn {
+  flex: 1;
+  min-width: 100px;
+  padding: 10px 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.rentTierBtn:hover {
+  border-color: #f39c12;
+  background: #fffaf0;
+}
+
+.rentTierBtnActive {
+  border-color: #f39c12;
+  background: #fffaf0;
+  box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.3);
+}
+
+.rentTierLabel {
+  font-weight: 700;
+  font-size: 14px;
+  display: block;
+}
+
+.rentTierPrice {
+  font-size: 13px;
+  color: #e74c3c;
+  font-weight: 600;
+  display: block;
+  margin-top: 4px;
+}
+
+/* ── 证券价格信息 ── */
+.priceRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #555;
+}
+
+.priceItem {
+  white-space: nowrap;
+}
+
+.priceItem strong {
+  color: var(--color-text);
+}
+
+.priceArrow {
+  color: #999;
+  font-size: 11px;
+}
+
+.priceDivider {
+  color: #ddd;
+  font-size: 14px;
+}
+
+.priceUp {
+  color: #e74c3c;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.priceDown {
+  color: #27ae60;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.priceSub {
+  font-size: 11px;
+  color: #999;
+  font-weight: 400;
+}
+
+.handTag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: #3498db;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+}

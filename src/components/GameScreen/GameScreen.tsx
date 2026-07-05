@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { Board } from '../Board/Board';
 import { PlayerPanel } from '../PlayerPanel/PlayerPanel';
 import { ActionBar } from '../ActionBar/ActionBar';
@@ -7,6 +8,8 @@ import { LiquidateModal } from '../LiquidateModal/LiquidateModal';
 import { CashFlowSettlementModal } from '../CashFlowSettlementModal/CashFlowSettlementModal';
 import { WinScreen } from '../WinScreen/WinScreen';
 import { SoundEffects } from '../SoundEffects/SoundEffects';
+import { RentModal } from '../RentModal/RentModal';
+import { AssetCenter } from '../AssetCenter/AssetCenter';
 import { useAIPlayer } from '../../hooks/useAIPlayer';
 import { useAutoTestAgent } from '../../hooks/useAutoTestAgent';
 import { AutoTestPanel } from '../AutoTestPanel/AutoTestPanel';
@@ -17,6 +20,27 @@ export function GameScreen() {
   const { state } = useGame();
   useAIPlayer();
   useAutoTestAgent();
+
+  const [showRentModal, setShowRentModal] = useState(false);
+  const [showAssetCenter, setShowAssetCenter] = useState(false);
+
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  // 检测是否需要强制弹出租房选择（无自住房且不处于结束/设置阶段）
+  const needsRentChoice = useMemo(() => {
+    if (!currentPlayer) return false;
+    if (state.phase === 'SETUP' || state.phase === 'GAME_OVER') return false;
+    if (currentPlayer.isBankrupt) return false;
+    const hasSelfLiving = currentPlayer.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
+    return !hasSelfLiving;
+  }, [currentPlayer, state.phase]);
+
+  // 当检测到需要租房选择时弹出
+  useMemo(() => {
+    if (needsRentChoice && !showRentModal && state.phase !== 'SETUP') {
+      setShowRentModal(true);
+    }
+  }, [needsRentChoice]);
 
   return (
     <div className={styles.screen}>
@@ -36,7 +60,7 @@ export function GameScreen() {
           <PlayerPanel />
         </div>
       </div>
-      <ActionBar />
+      <ActionBar onOpenAssetCenter={() => setShowAssetCenter(true)} />
       <LogPanel />
       <CardModal />
       <LiquidateModal />
@@ -44,6 +68,18 @@ export function GameScreen() {
       <WinScreen />
       <SoundEffects />
       {state.testMode && <AutoTestPanel />}
+      {showRentModal && currentPlayer && (
+        <RentModal
+          forced
+          onClose={() => setShowRentModal(false)}
+        />
+      )}
+      {showAssetCenter && currentPlayer && (
+        <AssetCenter
+          player={currentPlayer}
+          onClose={() => setShowAssetCenter(false)}
+        />
+      )}
     </div>
   );
 }

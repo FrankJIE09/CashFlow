@@ -9,7 +9,9 @@ import {
   checkBankruptcy,
   getHighestPriorityDebt,
   getMonthlyCashFlow,
+  getPassiveIncome,
   getSellableAssets,
+  getTotalExpenses,
   isStockLotAsset,
   previewRepayment,
   stockLotBuyCost,
@@ -341,8 +343,6 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
       humanPlayerName: '测试员',
       humanProfessionId: 'engineer',
       cityId: 'shanghai',
-      aiCount: 2,
-      aiDifficulty: 'medium',
       testMode: true,
       testMaxRounds: maxRounds,
     },
@@ -352,6 +352,7 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
   let steps = 0;
   let prevRound = 0;
   let prevPhase = state.phase;
+  const snapshotHistory: { round: number; cash: number; cashFlow: number; expenses: number; salary: number; passiveIncome: number; liabilities: number; rentExpense: number; phase: string; action: string }[] = [];
 
   while (state.phase !== 'GAME_OVER' && !state.testStopped && steps < maxSteps) {
     const before = state;
@@ -376,6 +377,20 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
     }
     if (state.round !== prevRound) {
       prevRound = state.round;
+      const p = state.players[state.currentPlayerIndex];
+      const cf = p ? getMonthlyCashFlow(p, state.cashFlowMultiplier, state.sectorMultiplier) : 0;
+      snapshotHistory.push({
+        round: state.round,
+        cash: p?.cash ?? 0,
+        cashFlow: cf,
+        expenses: p ? getTotalExpenses(p) : 0,
+        salary: p?.salary ?? 0,
+        passiveIncome: p ? getPassiveIncome(p, state.cashFlowMultiplier, state.sectorMultiplier) : 0,
+        liabilities: p?.liabilities.length ?? 0,
+        rentExpense: p?.rentExpense ?? 0,
+        phase: state.phase,
+        action: 'ROUND_START',
+      });
       process.stdout.write(`\r回合 ${state.round}/${maxRounds} ...`);
     }
     if (state.phase === prevPhase && state.phase === 'MOVING') {
@@ -386,6 +401,20 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
   }
 
   console.log('');
+
+  // 打印详细数据追踪
+  if (snapshotHistory.length > 0) {
+    console.log('\n--- 逐回合数据分析 ---');
+    console.log('回合\t现金\t\t现金流\t\t支出\t\t工资\t\t被动收入\t负债数\t房租\t\t阶段');
+    for (const h of snapshotHistory) {
+      console.log(
+        `${h.round}\t${h.cash.toLocaleString().padStart(8)}\t${h.cashFlow.toLocaleString().padStart(8)}\t` +
+        `${h.expenses.toLocaleString().padStart(8)}\t${h.salary.toLocaleString().padStart(8)}\t` +
+        `${h.passiveIncome.toLocaleString().padStart(8)}\t${h.liabilities}\t${h.rentExpense.toLocaleString().padStart(8)}\t${h.phase}`
+      );
+    }
+  }
+
   return state;
 }
 

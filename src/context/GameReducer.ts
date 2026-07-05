@@ -1,4 +1,4 @@
-import type { Asset, AssetType, Card, CardType, GameAction, GameConfig, GameState, MarketEffect, OpportunityCard, Player, PregnancyPath, Space } from '../types/game';
+import type { Asset, AssetType, Card, CardType, DoodadCard, GameAction, GameConfig, GameState, Liability, MarketEffect, OpportunityCard, Player, PregnancyPath, Space } from '../types/game';
 import { runTestValidators } from '../utils/testValidators';
 import { PROFESSIONS, PLAYER_COLORS, CUSTOM_PROFESSION_ID, buildCustomProfession, getProfessionAgeConfig, isSelfEmployedProfession } from '../data/professions';
 import { getCityById, DEFAULT_CITY_ID } from '../data/cities';
@@ -53,9 +53,11 @@ import {
   calcPensionIncome,
   calcElderlyMedicalExpense,
   calcMarriageHappinessBySalary,
+  calcHighDebtHappinessPenalty,
   stockLotSellProceeds,
   updateStockPeByPercent,
   getStockBasePe,
+  getRentExpense,
 } from '../utils/financial';
 import { applyInsuranceDeductible } from '../utils/financial';
 import { drawCard, generateId, shuffle } from '../utils/random';
@@ -216,12 +218,31 @@ function executeRetirement(state: GameState, playerIndex: number): GameState {
 function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameState {
   let newState = state;
 
-  // 股票持有月数 +1
+  // 月度资产刷新：持有月数/车辆折旧/大宗商品价格波动
   newState = updatePlayer(newState, playerIndex, (p) => ({
     ...p,
-    assets: p.assets.map((a) =>
-      isStockLotAsset(a) ? { ...a, heldMonths: (a.heldMonths ?? 0) + 1 } : a
-    ),
+    assets: p.assets.map((a) => {
+      // 股票：持有月数 +1
+      if (isStockLotAsset(a)) {
+        return { ...a, heldMonths: (a.heldMonths ?? 0) + 1 };
+      }
+      // 车辆（entity + sector=汽车）：每月 0.5% 折旧
+      if (a.type === 'entity' && a.metadata?.sector === '汽车') {
+        const depRate = 0.005;
+        const newMV = Math.round(a.marketValue * (1 - depRate));
+        const newCF = -Math.round(newMV * depRate * 0.3);
+        return { ...a, marketValue: newMV, cashFlow: Math.min(0, newCF) };
+      }
+      // 大宗商品：每月随机 ±2% 价格波动
+      if (a.type === 'commodity') {
+        const fluct = 0.98 + Math.random() * 0.04;
+        const newMV = Math.round(a.marketValue * fluct);
+        const ratio = newMV / Math.max(a.marketValue, 1);
+        const newCF = Math.round((a.cashFlow ?? 0) * ratio);
+        return { ...a, marketValue: newMV, cashFlow: newCF };
+      }
+      return a;
+    }),
   }));
 
   const updated = newState.players[playerIndex];
@@ -387,7 +408,12 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
       if (p.gender === 'female' && p.childAges.length > 0) {
         happiness = Math.max(0, happiness - getChildHappinessPenalty(p.childAges.length));
       }
-      return { ...p, marriageHappiness: happiness, dinkTurns };
+      // 【新增】v3.10 高负债婚姻幸福惩罚
+      const highDebtPenalty = calcHighDebtHappinessPenalty(p);
+      if (highDebtPenalty > 0) {
+        happiness = Math.max(0, happiness - highDebtPenalty);
+      }
+      return { ...p, marriageHappiness: happiness, dinkTurns, highDebtHappinessPenalty: highDebtPenalty };
     });
 
     // 【v3.8】孕期处理（含性别差异化流产、产假、生育补贴）
@@ -569,10 +595,42 @@ function findNextActivePlayer(state: GameState): number {
   return index;
 }
 
+/** 每月市场自然波动：资产价格随机游走 + 均值回归，使市场动态贴近真实 */
+function applyMonthlyMarketDrift(state: GameState): GameState {
+  const newMult = { ...state.marketMultiplier };
+  const newCF = { ...state.cashFlowMultiplier };
+
+  // 波动参数：每月 ±2%~3%
+  const VOLATILITY = 0.025;
+  // 均值回归力度：每月向 1.0 回归 5%
+  const MEAN_REVERSION = 0.05;
+
+  for (const type of Object.keys(newMult) as AssetType[]) {
+    // 向 1.0 回归
+    const pull = (1 - newMult[type]) * MEAN_REVERSION;
+    // 随机游走
+    const walk = (Math.random() - 0.5) * VOLATILITY * 2;
+    const delta = pull + walk;
+
+    newMult[type] = Math.max(0.5, Math.min(2.5, newMult[type] + newMult[type] * delta));
+    newCF[type] = Math.max(0.5, Math.min(2.5, newCF[type] + newCF[type] * delta));
+  }
+
+  return { ...state, marketMultiplier: newMult, cashFlowMultiplier: newCF };
+}
+
 function advanceTurn(state: GameState): GameState {
   const nextIndex = findNextActivePlayer(state);
-  const round = nextIndex === 0 ? state.round + 1 : state.round;
-  return { ...state, currentPlayerIndex: nextIndex, round };
+  const isNewRound = nextIndex === 0;
+  const round = isNewRound ? state.round + 1 : state.round;
+  let newState = { ...state, currentPlayerIndex: nextIndex, round };
+
+  // 每回合市场自然波动
+  if (isNewRound) {
+    newState = applyMonthlyMarketDrift(newState);
+  }
+
+  return newState;
 }
 
 function finishEndTurn(state: GameState, playerIndex: number): GameState {
@@ -600,7 +658,13 @@ function finishEndTurn(state: GameState, playerIndex: number): GameState {
     return addLog(winnerState, player.id, `${player.name} 在快车道积累 ${FAST_TRACK_WIN_AMOUNT} 元，赢得游戏！`, 'win');
   }
 
-  const nextState = advanceTurn(state);
+  // 【v3.10】更新租金支出
+  const rentState = updatePlayer(state, playerIndex, (p) => ({
+    ...p,
+    rentExpense: getRentExpense(p, p.cityId),
+  }));
+
+  const nextState = advanceTurn(rentState);
 
   if (state.testMode && state.testMaxRounds && nextState.round > state.testMaxRounds) {
     return addLog(
@@ -793,18 +857,35 @@ function handlePayday(state: GameState, playerIndex: number): GameState {
 
 function drawCardAndUpdateState(
   state: GameState,
-  cardType: CardType
+  cardType: CardType,
+  player?: Player
 ): { state: GameState; card: Card } | null {
-  const result = drawCard(state.decks[cardType], state.discardPiles[cardType]);
-  if (!result) return null;
-
-  const newState: GameState = {
-    ...state,
-    decks: { ...state.decks, [cardType]: result.deck },
-    discardPiles: { ...state.discardPiles, [cardType]: result.discardPile },
-    currentCard: result.card,
+  // doodad 卡前置过滤：抽到不匹配身份的卡自动跳过，最多重试10次
+  let remainingTries = 10;
+  while (remainingTries > 0) {
+    const result = drawCard(state.decks[cardType], state.discardPiles[cardType]);
+    if (!result) return null;
+    const newState: GameState = {
+      ...state,
+      decks: { ...state.decks, [cardType]: result.deck },
+      discardPiles: { ...state.discardPiles, [cardType]: result.discardPile },
+      currentCard: result.card,
+    };
+    // doodad 卡做身份过滤，不匹配则继续抽
+    if (cardType !== 'doodad' || !player || (result.card.type === 'doodad' && passesCardFilter(player, result.card as DoodadCard))) {
+      return { state: newState, card: result.card };
+    }
+    // 跳过此卡（已放入 discardPile），继续抽下一张
+    state = newState;
+    remainingTries--;
+  }
+  // 超过重试次数，返回最后一张
+  const lastResult = drawCard(state.decks[cardType], state.discardPiles[cardType]);
+  if (!lastResult) return null;
+  return {
+    state: { ...state, decks: { ...state.decks, [cardType]: lastResult.deck }, discardPiles: { ...state.discardPiles, [cardType]: lastResult.discardPile }, currentCard: lastResult.card },
+    card: lastResult.card,
   };
-  return { state: newState, card: result.card };
 }
 
 function executeBuyAsset(
@@ -834,6 +915,9 @@ function executeBuyAsset(
   const transactionFee = buyCost - principalCost - dueDiligenceCost;
   const shortfall = buyCost - player.cash;
 
+  // 先生成资产 ID，使贷款可关联到此抵押资产
+  const newAssetId = generateId();
+
   if (shortfall > 0) {
     newState = updatePlayer(newState, playerIndex, (p) => ({
       ...p,
@@ -848,17 +932,23 @@ function executeBuyAsset(
             debtType: 'bankBusinessLoan',
             source: 'game',
           }),
+          securedAssetId: newAssetId,
         },
       ],
     }));
     newState = addLog(newState, player.id, `${player.name} 为购买 ${finalAsset.name} 贷款 ${shortfall} 元`, 'liability');
   }
 
-  newState = updatePlayer(newState, playerIndex, (p) => ({
-    ...p,
-    cash: p.cash - buyCost,
-    assets: [...p.assets, { ...finalAsset, id: generateId() }],
-  }));
+  newState = updatePlayer(newState, playerIndex, (p) => {
+    let newAsset = { ...finalAsset, id: newAssetId };
+    if (newAsset.type === 'realEstate') {
+      const hasSelfHome = p.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
+      if (!hasSelfHome) {
+        newAsset = { ...newAsset, isSelfLiving: true };
+      }
+    }
+    return { ...p, cash: p.cash - buyCost, assets: [...p.assets, newAsset] };
+  });
 
   if (dueDiligenceCost > 0) {
     newState = addLog(newState, player.id, `${player.name} 支付尽调费 ${dueDiligenceCost} 元`, 'expense');
@@ -885,6 +975,7 @@ function executeBuyAsset(
             debtType: mortgageDebtType,
             source: 'game',
           }),
+          securedAssetId: newAssetId,
         },
       ],
     }));
@@ -911,6 +1002,26 @@ function applyInterestRateChange(
   const newRate = Math.max(0.001, oldRate + rateChange);
   const { players, changeLogs } = recalcAllPlayersMortgagesOnRateChange(state.players, newRate);
   let newState: GameState = { ...state, interestRate: newRate, players };
+
+  // 利率 ↔ 资产价格联动：升息 → 资产估值下降，降息 → 上升
+  if (rateChange !== 0) {
+    const impact = 1 + rateChange * (-15); // 每升息1% → 估值约-15%
+    const mMult = { ...newState.marketMultiplier };
+    const cMult = { ...newState.cashFlowMultiplier };
+    // 利率敏感型资产：房产/REITs/债券受影响最大，实体/商品次之
+    const rateSensitive: AssetType[] = ['realEstate', 'reit', 'bond'];
+    for (const t of rateSensitive) {
+      mMult[t] = Math.max(0.5, Math.min(2.5, mMult[t] * impact));
+      cMult[t] = Math.max(0.5, Math.min(2.5, cMult[t] * impact));
+    }
+    // 股票/衍生品也受影响但力度减半
+    const halfImpact = 1 + rateChange * (-8);
+    const semiSensitive: AssetType[] = ['stock', 'derivative', 'overseas'];
+    for (const t of semiSensitive) {
+      mMult[t] = Math.max(0.5, Math.min(2.5, mMult[t] * halfImpact));
+    }
+    newState = { ...newState, marketMultiplier: mMult, cashFlowMultiplier: cMult };
+  }
 
   const prefix = cardTitle ? `【${cardTitle}】` : '';
   newState = addLog(
@@ -1156,6 +1267,27 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
       }
       break;
     }
+    case 'inflationEvent': {
+      // 通胀/通缩事件：applyAssetImpacts 处理具体资产类型价格变化
+      newState = applyAssetImpacts(newState, player.id, card.title, effect);
+      // inflationDelta: 全局通胀/通缩幅度，调整所有资产类型乘数
+      if (effect.inflationDelta != null && effect.inflationDelta !== 0) {
+        const delta = 1 + effect.inflationDelta;
+        const multiplier = { ...newState.marketMultiplier };
+        const cashFlowM = { ...newState.cashFlowMultiplier };
+        for (const type of Object.keys(multiplier) as AssetType[]) {
+          multiplier[type] = Math.max(0.1, multiplier[type] * delta);
+          cashFlowM[type] = Math.max(0.1, cashFlowM[type] * delta);
+        }
+        newState = { ...newState, marketMultiplier: multiplier, cashFlowMultiplier: cashFlowM };
+        const dir = effect.inflationDelta > 0 ? '通胀' : '通缩';
+        const pct = (Math.abs(effect.inflationDelta) * 100).toFixed(0);
+        newState = addLog(newState, player.id, `【${card.title}】${dir} ${pct}%，现金购买力${effect.inflationDelta > 0 ? '下降' : '上升'}`, 'market');
+      }
+      // 对持仓股票应用 PE 效应
+      newState = applyPeEffectToStockAssets(newState, playerIndex, effect);
+      break;
+    }
     default:
       break;
   }
@@ -1274,6 +1406,55 @@ function drawDiscountedOpportunity(state: GameState, playerIndex: number): GameS
   return { ...newState, currentCard: discountedCard };
 }
 
+/**
+ * 处理抵押资产卖出/变卖：从 proceeds 中扣除剩余贷款，多退少补
+ * @returns 净现金收入、更新后负债列表、不足额（>0 表示还需补差）
+ */
+function settleAssetLoan(
+  player: Player,
+  assetId: string,
+  grossProceeds: number,
+  deficiencyLabel = '差额贷款'
+): { netCash: number; updatedLiabilities: Liability[]; deficiency: number } {
+  const securedLiabilities = player.liabilities.filter(l => l.securedAssetId === assetId);
+  if (securedLiabilities.length === 0) {
+    return { netCash: grossProceeds, updatedLiabilities: player.liabilities, deficiency: 0 };
+  }
+
+  // 累计所有抵押贷款余额
+  const totalPrincipal = securedLiabilities.reduce((sum, l) => sum + l.principal, 0);
+  const securedIds = new Set(securedLiabilities.map(l => l.id));
+
+  if (grossProceeds >= totalPrincipal) {
+    // 卖出价 ≥ 总剩余贷款 → 还清全部贷款，拿回剩余净值
+    const netCash = grossProceeds - totalPrincipal;
+    return {
+      netCash,
+      updatedLiabilities: player.liabilities.filter(l => !securedIds.has(l.id)),
+      deficiency: 0,
+    };
+  }
+
+  // 卖出价 < 总剩余贷款：全部还贷，差额转为无抵押负债
+  const deficiency = totalPrincipal - grossProceeds;
+  const otherLiabilities = player.liabilities.filter(l => !securedIds.has(l.id));
+  const deficiencyLiability = normalizeLiability({
+    id: generateId(),
+    ...createLiability({
+      name: deficiencyLabel,
+      principal: deficiency,
+      debtType: 'consumerLoan',
+      source: 'game',
+      paidPeriods: 0,
+    }),
+  });
+  return {
+    netCash: 0,
+    updatedLiabilities: [...otherLiabilities, deficiencyLiability],
+    deficiency,
+  };
+}
+
 function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?: string): Player {
   const professionId = isAI ? PROFESSIONS[index % PROFESSIONS.length].id : config.humanProfessionId;
   const profession =
@@ -1305,6 +1486,68 @@ function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?:
   const gender: import('../types/game').PlayerGender =
     !isAI ? (config.humanGender ?? 'male') : (Math.random() < 0.5 ? 'female' : 'male');
 
+  // 先为抵押资产生成 ID（房贷/车贷需与资产互相绑定）
+  const houseAssetId = generateId();
+  const carAssetId = generateId();
+
+  // 构建初始资产列表（房贷/车贷对应的抵押资产）
+  const initialAssets: Asset[] = [];
+  const houseDebt = profession.liabilities.find(l => l.debtType === 'houseFirst' || inferProfessionDebtType(l.name) === 'houseFirst');
+  if (houseDebt) {
+    const downPaymentRatio = city.downPaymentFirst ?? 0.3;
+    const totalCost = Math.round(houseDebt.principal / (1 - downPaymentRatio));
+    initialAssets.push({
+      id: houseAssetId,
+      name: `${city.name}自住房`,
+      type: 'realEstate',
+      cost: totalCost,
+      downPayment: totalCost - houseDebt.principal,
+      cashFlow: 0,
+      mortgage: houseDebt.principal,
+      marketValue: totalCost,
+      isSelfLiving: true,
+      purchaseRound: 0,
+      heldMonths: 0,
+      metadata: { cityTier: city.tier as import('../types/game').PropertyTier },
+    });
+  }
+
+  const carDebt = profession.liabilities.find(l => l.debtType === 'carLoan' || inferProfessionDebtType(l.name) === 'carLoan');
+  if (carDebt) {
+    const carDownRatio = 0.3;
+    const totalCarCost = Math.round(carDebt.principal / (1 - carDownRatio));
+    initialAssets.push({
+      id: carAssetId,
+      name: '家用汽车',
+      type: 'entity',
+      cost: totalCarCost,
+      downPayment: totalCarCost - carDebt.principal,
+      cashFlow: -Math.round(totalCarCost * 0.005),
+      mortgage: carDebt.principal,
+      marketValue: totalCarCost,
+      purchaseRound: 0,
+      heldMonths: 0,
+      metadata: { sector: '汽车', liquidity: 'illiquid', incomeType: 'operating', riskLevel: 'low', subCategory: '家用车' },
+    });
+  }
+
+  // 构建初始负债列表，房贷/车贷通过 securedAssetId 关联到对应资产
+  const initialLiabilities = profession.liabilities.map((l) => {
+    const debtType = inferProfessionDebtType(l.name);
+    let securedAssetId: string | undefined;
+    if (debtType === 'houseFirst') securedAssetId = houseAssetId;
+    if (debtType === 'carLoan') securedAssetId = carAssetId;
+    return normalizeLiability({
+      ...l,
+      id: generateId(),
+      debtType,
+      originalPrincipal: l.principal,
+      paidPeriods: l.paidPeriods ?? 0,
+      source: 'profession' as const,
+      securedAssetId,
+    });
+  });
+
   return {
     id: generateId(),
     name,
@@ -1320,17 +1563,8 @@ function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?:
     expenses,
     children: 0,
     childAges: [],
-    assets: [],
-    liabilities: profession.liabilities.map((l) =>
-      normalizeLiability({
-        ...l,
-        id: generateId(),
-        debtType: inferProfessionDebtType(l.name),
-        originalPrincipal: l.principal,
-        paidPeriods: l.paidPeriods ?? 0,
-        source: 'profession' as const,
-      })
-    ),
+    assets: initialAssets,
+    liabilities: initialLiabilities,
     isInFastTrack: false,
     fastTrackPosition: 0,
     charityTurns: 0,
@@ -1375,6 +1609,7 @@ function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?:
     maternityLeaveRemaining: 0,
     maternitySubsidy: 0,
     hasMedicalInsuranceCard: false,
+    rentTier: 'standard',
   };
 }
 
@@ -1504,7 +1739,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         case 'doodad': {
           const cardType: CardType =
             space.type === 'opportunity' ? 'opportunity' : space.type === 'market' ? 'market' : 'doodad';
-          const result = drawCardAndUpdateState(newState, cardType);
+          const result = drawCardAndUpdateState(newState, cardType, player);
           if (!result) return { ...newState, phase: 'TURN_END' };
           const cardState = result.state;
           const card = result.card;
@@ -1577,7 +1812,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
 
     case 'DRAW_CARD': {
       const cardType = action.payload.cardType;
-      const result = drawCardAndUpdateState(state, cardType);
+      const result = drawCardAndUpdateState(state, cardType, player);
       if (!result) return state;
 
       let newState = result.state;
@@ -1628,7 +1863,16 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       const card = state.currentCard;
       if (!card || card.type !== 'doodad') return state;
 
-      // 【v3.8】性别限制检查
+      // 【v3.10】统一 filterConfig 身份前置过滤
+      if (!passesCardFilter(player, card)) {
+        return {
+          ...addLog(state, player.id, `${player.name} 的身份不适用此事件（${card.title}），跳过`, 'system'),
+          phase: 'TURN_END',
+          currentCard: null,
+        };
+      }
+
+      // 【v3.8】性别限制检查（向后兼容 genderRequired）
       if (card.genderRequired && card.genderRequired !== player.gender) {
         const skipState = addLog(
           state,
@@ -1639,7 +1883,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         return { ...skipState, phase: 'TURN_END', currentCard: null };
       }
 
-      // 【新增】v3.7 家庭身份校验
+      // 【新增】v3.7 家庭身份校验（向后兼容 ID 白名单）
       const isChildExpense = ['family_school_choice', 'doodad_tutor', 'doodad_study_abroad'].includes(card.id ?? '');
       if (isChildExpense && (player.children === 0 || (player.dinkTurns ?? 0) > 0)) {
         return { ...addLog(state, player.id, `${player.name} 无子女或为丁克，跳过子女费用`, 'system'), phase: 'TURN_END', currentCard: null };
@@ -2314,13 +2558,37 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       }
 
       const sellPrice = calculateSellProceeds(asset, effectiveMult, {});
-      let newState = updatePlayer(state, playerIndex, (p) => ({
-        ...p,
-        cash: p.cash + sellPrice,
-        assets: p.assets.filter((a) => a.id !== assetId),
-        liabilities: p.liabilities.filter((l) => l.name !== `${asset.name} 抵押贷款`),
-      }));
-      newState = addLog(newState, player.id, `${player.name} 卖出 ${asset.name}，获得 ${sellPrice} 元`, 'asset');
+      // 【修正】v3.10 抵押资产卖出：先还贷再给净值
+      const wasSelfLiving = asset.type === 'realEstate' && asset.isSelfLiving;
+      let newState = updatePlayer(state, playerIndex, (p) => {
+        const { netCash, updatedLiabilities, deficiency } = settleAssetLoan(p, assetId, sellPrice, `${asset.name}不足额`);
+        const remaining = p.assets.filter((a) => a.id !== assetId);
+        if (wasSelfLiving) {
+          const nextHome = remaining.find(a => a.type === 'realEstate' && !a.isSelfLiving);
+          if (nextHome) {
+            return {
+              ...p,
+              cash: p.cash + netCash,
+              assets: remaining.map(a => a.id === nextHome.id ? { ...a, isSelfLiving: true } : a),
+              liabilities: updatedLiabilities,
+            };
+          }
+        }
+        return {
+          ...p,
+          cash: p.cash + netCash,
+          assets: remaining,
+          liabilities: updatedLiabilities,
+        };
+      });
+      const securedLoans = state.players[playerIndex].liabilities.filter(l => l.securedAssetId === assetId);
+      const payOff = securedLoans.reduce((s, l) => s + l.principal, 0);
+      newState = addLog(
+        newState,
+        player.id,
+        `${player.name} 卖出 ${asset.name}，售价 ${sellPrice} 元，还贷 ${payOff} 元，净得 ${sellPrice - payOff} 元`,
+        'asset'
+      );
       return { ...newState, currentCard: null, phase: 'TURN_END' };
     }
 
@@ -2333,23 +2601,41 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         ? liquidateAssetSecret(asset, state.marketMultiplier, state.sectorMultiplier)
         : liquidateAssetConsent(asset, state.marketMultiplier, state.sectorMultiplier);
 
-      let newState = updatePlayer(state, playerIndex, (p) => ({
-        ...p,
-        cash: p.cash + liquidation.proceeds,
-        assets: p.assets.filter((a) => a.id !== assetId),
-        liabilities: p.liabilities.filter((l) => l.name !== `${asset.name} 抵押贷款`),
-        marriageHappiness:
-          p.marriageStatus === 'married'
-            ? Math.max(0, p.marriageHappiness + liquidation.happinessDelta)
-            : p.marriageHappiness,
-        hasSecretLiquidation: p.hasSecretLiquidation || liquidation.isSecret,
-      }));
+      // 【修正】v3.10 抵押资产变卖：先还贷再给净值
+      const wasSelfLiving = asset.type === 'realEstate' && asset.isSelfLiving;
+      let newState = updatePlayer(state, playerIndex, (p) => {
+        const { netCash, updatedLiabilities, deficiency } = settleAssetLoan(
+          p, assetId, liquidation.proceeds, `${asset.name}变卖差额`
+        );
+        const remaining = p.assets.filter((a) => a.id !== assetId);
+        let assets = remaining;
+        if (wasSelfLiving) {
+          const nextHome = remaining.find(a => a.type === 'realEstate' && !a.isSelfLiving);
+          if (nextHome) {
+            assets = remaining.map(a => a.id === nextHome.id ? { ...a, isSelfLiving: true } : a);
+          }
+        }
+        return {
+          ...p,
+          cash: p.cash + netCash,
+          assets,
+          liabilities: updatedLiabilities,
+          marriageHappiness:
+            p.marriageStatus === 'married'
+              ? Math.max(0, p.marriageHappiness + liquidation.happinessDelta)
+              : p.marriageHappiness,
+          hasSecretLiquidation: p.hasSecretLiquidation || liquidation.isSecret,
+        };
+      });
 
+      const securedLoans = state.players[playerIndex].liabilities.filter(l => l.securedAssetId === assetId);
+      const payOffAmt = securedLoans.reduce((s, l) => s + l.principal, 0);
+      const netToPlayer = liquidation.proceeds - payOffAmt;
       const modeLabel = isSecretSell ? '私自变卖' : '协商变卖';
       newState = addLog(
         newState,
         player.id,
-        `${player.name} ${modeLabel} ${asset.name}，获得 ${liquidation.proceeds} 元，幸福度 ${liquidation.happinessDelta}`,
+        `${player.name} ${modeLabel} ${asset.name}，变卖价 ${liquidation.proceeds} 元，还贷 ${payOffAmt} 元，净得 ${netToPlayer} 元，幸福度 ${liquidation.happinessDelta}`,
         'asset'
       );
 
@@ -2370,7 +2656,8 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
     }
 
     case 'CONFIRM_CASH_FLOW_SETTLEMENT': {
-      return { ...state, pendingCashFlowSettlement: null, phase: state.pendingLiquidation ? 'CARD_DECISION' : 'TURN_END' };
+      const hasPendingCard = state.currentCard || state.pendingLiquidation;
+      return { ...state, pendingCashFlowSettlement: null, phase: hasPendingCard ? 'CARD_DECISION' : 'TURN_END' };
     }
 
     case 'END_TURN': {
@@ -2447,14 +2734,96 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       return { ...newState };
     }
 
+    case 'SET_RENT_TIER': {
+      const tier = action.payload.tier;
+      return updatePlayer(state, playerIndex, (p) => ({
+        ...p,
+        rentTier: tier,
+      }));
+    }
+
     default:
       return state;
   }
 }
 
+/**
+ * 全局字段钳位：所有数值字段锁定合法区间
+ */
+function clampPlayerFields(player: Player): Player {
+  return {
+    ...player,
+    cash: Math.max(0, player.cash ?? 0),
+    marriageHappiness: Math.min(100, Math.max(0, player.marriageHappiness ?? 0)),
+    children: Math.min(10, Math.max(0, player.children ?? 0)),
+    rentExpense: Math.max(0, player.rentExpense ?? 0),
+  };
+}
+
+/**
+ * 全局现金兜底 + 字段钳位：任何 Action 执行后确保数值合法
+ */
+function wrapCashGuard(state: GameState): GameState {
+  if (state.isGameOver || state.phase === 'GAME_OVER' || state.phase === 'SETUP') return state;
+  const playerIndex = state.currentPlayerIndex;
+  const player = state.players[playerIndex];
+  if (!player || player.isBankrupt || player.isDeceased) return state;
+
+  // 字段钳位（现金、幸福度、子女数、房租等全部锁定合法区间）
+  let clampedState = updatePlayer(state, playerIndex, (p) => clampPlayerFields(p));
+
+  const clampedPlayer = clampedState.players[playerIndex];
+  if (clampedPlayer.cash >= 0) return clampedState;
+
+  // 现金为负 → 触发变卖或自动贷款填平
+  if (needsLiquidation(clampedPlayer, state.cashFlowMultiplier, state.sectorMultiplier)) {
+    if (clampedState.pendingLiquidation && clampedState.phase === 'CARD_DECISION') return clampedState;
+    return { ...clampedState, phase: 'CARD_DECISION', pendingLiquidation: true, currentCard: null };
+  }
+
+  // 无可变卖资产 → 自动贷款填平
+  const gap = Math.abs(clampedPlayer.cash);
+  const newState = updatePlayer(clampedState, playerIndex, (p) => ({
+    ...p,
+    cash: 0,
+    liabilities: [
+      ...p.liabilities,
+      {
+        id: generateId(),
+        ...createLiability({
+          name: '现金兜底贷款',
+          principal: gap,
+          debtType: 'bankBusinessLoan',
+          source: 'game',
+        }),
+      },
+    ],
+  }));
+  return addLog(newState, player.id, `现金不足，自动贷款 ${gap} 元兜底`, 'system');
+}
+
+/** 检查玩家是否匹配 DoodadCard 的 filterConfig */
+function passesCardFilter(player: Player, card: DoodadCard): boolean {
+  const cfg = card.filterConfig;
+  if (!cfg) return true;
+
+  if (cfg.minAge !== undefined && player.age < cfg.minAge) return false;
+  if (cfg.maxAge !== undefined && player.age > cfg.maxAge) return false;
+  if (cfg.marriageStatus && player.marriageStatus !== cfg.marriageStatus) return false;
+  if (cfg.minChildren !== undefined && (player.children ?? 0) < cfg.minChildren) return false;
+  if (cfg.maxChildren !== undefined && (player.children ?? 0) > cfg.maxChildren) return false;
+  if (cfg.gender && player.gender !== cfg.gender) return false;
+  if (cfg.retired === true && !player.isRetired) return false;
+  if (cfg.retired === false && player.isRetired) return false;
+  if (cfg.unemployed === true && !player.isUnemployed) return false;
+  if (cfg.unemployed === false && player.isUnemployed) return false;
+  return true;
+}
+
 export function gameReducer(state: GameState, action: GameAction): GameState {
   const nextState = gameReducerSwitch(state, action);
-  return runTestValidators(nextState, state, action);
+  const guardedState = wrapCashGuard(nextState);
+  return runTestValidators(guardedState, state, action);
 }
 
 export function getInitialGameState(): GameState {
