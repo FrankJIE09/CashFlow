@@ -106,7 +106,7 @@ export function RepayModal({ player, onClose, initialLiability = null, nested = 
                 <input
                   type="number"
                   className={styles.repayInput}
-                  value={repayAmount}
+                  value={repayAmount || ''}
                   min={0}
                   max={repayTarget.principal}
                   step={100}

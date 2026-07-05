@@ -244,8 +244,8 @@ function autoStep(state: GameState): GameState {
       if (effect.type === 'buyout') {
         const targetType = effect.targetAssetType;
         const sellable = targetType
-          ? player.assets.filter((a) => a.type === targetType)
-          : player.assets;
+          ? player.assets.filter((a) => a.type === targetType && !a.isSelfLiving)
+          : player.assets.filter((a) => !a.isSelfLiving);
         if (sellable.length > 0 && shouldSellInCrisis(player, card)) {
           const worst = sellable.reduce((prev, curr) =>
             curr.cashFlow / Math.max(curr.downPayment, 1) <

@@ -1159,9 +1159,6 @@ export function canPurchaseOpportunity(
   marketMultiplier: Record<AssetType, number>,
   sectorMultiplier: Record<string, number> = {}
 ): { allowed: boolean; reason?: string } {
-  if (card.minNetWorth && getNetWorth(player, marketMultiplier, sectorMultiplier) < card.minNetWorth) {
-    return { allowed: false, reason: `需要净资产 ≥ ${card.minNetWorth.toLocaleString()} 元` };
-  }
   if (card.minCashRequired && player.cash < card.minCashRequired) {
     return { allowed: false, reason: `需要现金 ≥ ${card.minCashRequired.toLocaleString()} 元` };
   }

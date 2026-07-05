@@ -702,7 +702,13 @@ function checkAndHandleBankruptcy(state: GameState): GameState {
   const player = state.players[playerIndex];
   const cf = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
 
-  if (cf >= 0) return state;
+  // 现金流已恢复正值：清除变卖标记
+  if (cf >= 0) {
+    if (state.pendingLiquidation) {
+      return { ...state, pendingLiquidation: false };
+    }
+    return state;
+  }
 
   if (needsLiquidation(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
     if (state.pendingLiquidation && state.phase === 'CARD_DECISION') return state;
@@ -901,7 +907,7 @@ function executeBuyAsset(
 
   let finalAsset = asset;
   if (isStockLotAsset(asset)) {
-    const lots = Math.max(1, Math.floor(shareHand ?? asset.shareHand ?? 1));
+    const lots = Math.max(0, Math.floor(shareHand ?? asset.shareHand ?? 1));
     if (!Number.isInteger(lots) || lots < 1) {
       return addLog(state, player.id, `${player.name} 股票须按整手买入（1手=100股）`, 'system');
     }
@@ -2769,37 +2775,38 @@ function wrapCashGuard(state: GameState): GameState {
   const player = state.players[playerIndex];
   if (!player || player.isBankrupt || player.isDeceased) return state;
 
-  // 字段钳位（现金、幸福度、子女数、房租等全部锁定合法区间）
-  let clampedState = updatePlayer(state, playerIndex, (p) => clampPlayerFields(p));
+  // 先检查原始现金是否真的为负（钳位前）
+  if (player.cash < 0) {
+    if (needsLiquidation(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
+      if (state.pendingLiquidation && state.phase === 'CARD_DECISION') return state;
+      // 不钳位，让 LiquidateModal 看到真实负现金
+      return { ...state, phase: 'CARD_DECISION', pendingLiquidation: true, currentCard: null };
+    }
 
-  const clampedPlayer = clampedState.players[playerIndex];
-  if (clampedPlayer.cash >= 0) return clampedState;
-
-  // 现金为负 → 触发变卖或自动贷款填平
-  if (needsLiquidation(clampedPlayer, state.cashFlowMultiplier, state.sectorMultiplier)) {
-    if (clampedState.pendingLiquidation && clampedState.phase === 'CARD_DECISION') return clampedState;
-    return { ...clampedState, phase: 'CARD_DECISION', pendingLiquidation: true, currentCard: null };
+    // 无可变卖资产 → 自动贷款填平
+    const gap = Math.abs(player.cash);
+    const loanState = updatePlayer(state, playerIndex, (p) => ({
+      ...p,
+      cash: 0,
+      liabilities: [
+        ...p.liabilities,
+        {
+          id: generateId(),
+          ...createLiability({
+            name: '现金兜底贷款',
+            principal: gap,
+            debtType: 'bankBusinessLoan',
+            source: 'game',
+          }),
+        },
+      ],
+    }));
+    return addLog(loanState, player.id, `现金不足，自动贷款 ${gap} 元兜底`, 'system');
   }
 
-  // 无可变卖资产 → 自动贷款填平
-  const gap = Math.abs(clampedPlayer.cash);
-  const newState = updatePlayer(clampedState, playerIndex, (p) => ({
-    ...p,
-    cash: 0,
-    liabilities: [
-      ...p.liabilities,
-      {
-        id: generateId(),
-        ...createLiability({
-          name: '现金兜底贷款',
-          principal: gap,
-          debtType: 'bankBusinessLoan',
-          source: 'game',
-        }),
-      },
-    ],
-  }));
-  return addLog(newState, player.id, `现金不足，自动贷款 ${gap} 元兜底`, 'system');
+  // 现金 >= 0：仅做字段钳位后返回
+  let clampedState = updatePlayer(state, playerIndex, (p) => clampPlayerFields(p));
+  return clampedState;
 }
 
 /** 检查玩家是否匹配 DoodadCard 的 filterConfig */

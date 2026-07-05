@@ -87,11 +87,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
   stock('icbc', '工商银行', '601398', '上交所', '金融', 5.8, 1000, 0.055, 5.2, 0.55, 'smallDeal'),
   stock('cypd', '长江电力', '600900', '上交所', '公用事业', 28.5, 200, 0.042, 18.5, 2.1, 'smallDeal'),
   stock('moutai', '贵州茅台', '600519', '上交所', '消费', 1680, 10, 0.012, 28, 8.5, 'smallDeal', {
-    minNetWorth: 50000,
   }),
   stock('gree', '格力电器', '000651', '深交所', '消费', 38, 200, 0.045, 12, 2.8, 'smallDeal'),
   stock('tencent', '腾讯控股', '00700', '港交所', '科技', 380, 100, 0.008, 22, 4.5, 'smallDeal', {
-    minNetWorth: 40000,
   }),
   stock('ali', '阿里巴巴', '09988', '港交所', '科技', 85, 200, 0.006, 15, 1.8, 'smallDeal'),
   stock('catl', '宁德时代', '300750', '深交所', '新能源', 185, 100, 0.008, 22, 4.2, 'smallDeal'),
@@ -538,7 +536,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '杭州/成都等城市改善型住宅，门槛较高。',
     type: 'opportunity',
     kind: 'smallDeal',
-    minNetWorth: 80000,
     asset: {
       id: 're_tier2_asset',
       name: '二线改善房',
@@ -564,7 +561,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '成熟社区底商，租金有望覆盖月供。',
     type: 'opportunity',
     kind: 'smallDeal',
-    minNetWorth: 150000,
     asset: {
       id: 're_shop_asset',
       name: '社区底商',
@@ -798,7 +794,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
 
   // ── 大买卖：蓝筹 / 海外ETF ──
   stock('pingan', '中国平安', '601318', '上交所', '金融', 52, 500, 0.048, 8.5, 1.1, 'bigDeal', {
-    minNetWorth: 100000,
     dueDiligenceCost: 500,
     infoTier: 'standard',
   }),
@@ -808,7 +803,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '跟踪纳斯达克100指数，布局全球科技龙头。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 80000,
     dueDiligenceCost: 300,
     infoTier: 'standard',
     asset: {
@@ -845,7 +839,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '跟踪标普500指数，分散配置美股大盘。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 80000,
     asset: {
       id: 'sp500_etf_asset',
       name: '标普500ETF',
@@ -881,7 +874,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '全国物流仓储网络，机构级REITs资产。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 150000,
     dueDiligenceCost: 1000,
     infoTier: 'premium',
     asset: {
@@ -916,7 +908,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '一篮子公募REITs，分散配置基础设施与商业地产。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 100000,
     asset: {
       id: 'reit_index_fund_asset',
       name: 'REITs指数基金',
@@ -947,21 +938,20 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '一线城市核心商圈购物中心，租金回报丰厚。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 300000,
-    dueDiligenceCost: 5000,
+    dueDiligenceCost: 15000,
     infoTier: 'premium',
     asset: {
       id: 'mall_core_asset',
       name: '核心地段购物中心',
       type: 'realEstate',
-      cost: 800000,
-      downPayment: 160000,
-      cashFlow: 1550,
-      mortgage: 640000,
-      marketValue: 800000,
+      cost: 4000000,
+      downPayment: 2000000,
+      cashFlow: 13333,
+      mortgage: 2000000,
+      marketValue: 4000000,
       metadata: {
         sector: '商业地产',
-        cityTier: 'tier1',
+        cityTier: 'commercial',
         liquidity: 'illiquid',
         incomeType: 'rent',
         riskLevel: 'medium',
@@ -975,16 +965,15 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '一栋拥有 8 套公寓的住宅楼，租金现金流稳定。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 120000,
     asset: {
       id: 'apt_building_8',
       name: '8 套公寓楼',
       type: 'realEstate',
-      cost: 200000,
-      downPayment: 40000,
-      cashFlow: 470,
-      mortgage: 160000,
-      marketValue: 200000,
+      cost: 800000,
+      downPayment: 160000,
+      cashFlow: 1880,
+      mortgage: 640000,
+      marketValue: 800000,
       metadata: {
         sector: '住宅',
         cityTier: 'tier2',
@@ -1001,7 +990,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '北上广深核心地段，高门槛高增值潜力。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 3000000,
     dueDiligenceCost: 8000,
     infoTier: 'premium',
     asset: {
@@ -1029,7 +1017,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '豪华商务座驾，可按城市生活成本调整车价与车贷。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 200000,
     dueDiligenceCost: 500,
     asset: {
       id: 'luxury_car_asset',
@@ -1056,7 +1043,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     description: '加盟知名连锁酒店品牌，经营现金流可观。',
     type: 'opportunity',
     kind: 'bigDeal',
-    minNetWorth: 250000,
     dueDiligenceCost: 3000,
     asset: {
       id: 'hotel_chain',

@@ -75,7 +75,9 @@ function shouldSellInCrisis(player: Player, card: Card): boolean {
   if (card.type !== 'market' || card.effect.type !== 'buyout') return false;
   if (!isCrisisEvent(card)) return true;
   const targetType = card.effect.targetAssetType;
-  const sellable = targetType ? player.assets.filter((a) => a.type === targetType) : player.assets;
+  const sellable = targetType
+    ? player.assets.filter((a) => a.type === targetType && !a.isSelfLiving)
+    : player.assets.filter((a) => !a.isSelfLiving);
   const growthAssets = sellable.filter((a) => a.metadata?.sector && GROWTH_SECTORS.has(a.metadata.sector));
   return growthAssets.length > 0 ? Math.random() > 0.3 : sellable.length > 0;
 }

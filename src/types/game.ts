@@ -367,7 +367,6 @@ export interface OpportunityCard extends BaseCard {
   asset: Asset;
   minCashRequired?: number;
   minProfessionLevel?: number;
-  minNetWorth?: number;
   dueDiligenceCost?: number;
   infoTier?: InfoTier;
 }

@@ -421,9 +421,10 @@ export function CardModal() {
 
     if (effect.type === 'buyout') {
       const targetType = effect.targetAssetType;
+      // 收购要约不包含自住房屋
       const sellableAssets = targetType
-        ? player.assets.filter((a) => a.type === targetType)
-        : player.assets;
+        ? player.assets.filter((a) => a.type === targetType && !a.isSelfLiving)
+        : player.assets.filter((a) => !a.isSelfLiving);
 
       return (
         <div className={styles.overlay}>
@@ -644,16 +645,16 @@ export function CardModal() {
     const meta = asset.metadata;
     const isDiscounted = space.type === 'market';
     const isStock = isStockLotAsset(asset);
-    const lots = isStock ? Math.max(1, Math.floor(stockLots)) : 1;
+    const lots = isStock ? (stockLots === '' ? 0 : Math.max(1, Math.floor(stockLots))) : 1;
     const lotPrincipal = isStock ? lots * 100 * (asset.singlePrice ?? 0) : asset.downPayment;
     const lotCashFlow = isStock
       ? Math.round((lots * 100 * (asset.yearDivPerShare ?? 0)) / 12)
       : asset.cashFlow;
     const purchaseGate = canPurchaseOpportunity(player, card, state.marketMultiplier, state.sectorMultiplier);
     const totalBuyCost = isStock
-      ? stockLotBuyCost(lots, asset.singlePrice ?? 0) + (card.dueDiligenceCost ?? 0)
+      ? (stockLots !== '' ? stockLotBuyCost(lots, asset.singlePrice ?? 0) + (card.dueDiligenceCost ?? 0) : 0)
       : calculateBuyCost(asset) + (card.dueDiligenceCost ?? 0);
-    const affordable = player.cash >= totalBuyCost;
+    const affordable = isStock ? (stockLots !== '' && player.cash >= totalBuyCost) : player.cash >= totalBuyCost;
     const shortfall = totalBuyCost - player.cash;
     const canLoan = shortfall > 0 && purchaseGate.allowed;
 
@@ -678,7 +679,9 @@ export function CardModal() {
                   step={1}
                   value={stockLots}
                   onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
+                    const raw = e.target.value;
+                    if (raw === '') { setStockLots(''); return; }
+                    const v = parseInt(raw, 10);
                     setStockLots(Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1);
                   }}
                   className={styles.lotInput}
@@ -696,7 +699,11 @@ export function CardModal() {
               )}
               {meta.sector && <span className={styles.fundTag}>{meta.sector}</span>}
               {meta.liquidity && <span className={styles.fundTag}>{meta.liquidity}</span>}
-              {meta.peTTM && <span className={styles.fundTag}>PE {meta.peTTM}</span>}
+              {isStock && asset.currentPe != null ? (
+                <span className={styles.fundTag}>PE {asset.currentPe.toFixed(1)}</span>
+              ) : meta.peTTM ? (
+                <span className={styles.fundTag}>PE {meta.peTTM}</span>
+              ) : null}
               {meta.pb && <span className={styles.fundTag}>PB {meta.pb}</span>}
               {meta.dividendYield && (
                 <span className={styles.fundTag}>股息 {(meta.dividendYield * 100).toFixed(1)}%</span>
@@ -722,19 +729,13 @@ export function CardModal() {
                     {valuation === 'deepUndervalue' && ' 💎'}
                     {valuation === 'severeOvervalue' && ' ⚠️'}
                     {valuation === 'fair' && ' ✅'}
-                    （现价 {formatCurrency(price)}）
+                    （市价 {formatCurrency(price)}）
                   </span>
                 );
               })()}
             </div>
           )}
 
-          {card.minNetWorth && (
-            <div className={styles.gateInfo}>
-              门槛：净资产 ≥ {formatCurrency(card.minNetWorth)}
-              （当前 {formatCurrency(getNetWorth(player, state.marketMultiplier, state.sectorMultiplier))}）
-            </div>
-          )}
           {card.dueDiligenceCost && (
             <div className={styles.gateInfo}>尽调费：{formatCurrency(card.dueDiligenceCost)}</div>
           )}
@@ -750,8 +751,14 @@ export function CardModal() {
             </div>
             {isStock && (
               <div className={styles.assetRow}>
-                <span>单价</span>
+                <span>发行价</span>
                 <span>{formatCurrency(asset.singlePrice ?? 0)}/份</span>
+              </div>
+            )}
+            {isStock && (
+              <div className={styles.assetRow}>
+                <span>市价</span>
+                <span>{formatCurrency(calcCurrentStockPrice(asset))}/份</span>
               </div>
             )}
             <div className={styles.assetRow}>
@@ -804,7 +811,11 @@ export function CardModal() {
                   ? actions.buyDiscountedAsset(isStock ? lots : undefined)
                   : actions.buyAsset(isStock ? lots : undefined)
               }
-              disabled={!purchaseGate.allowed || (!affordable && !canLoan)}
+              disabled={
+                !purchaseGate.allowed ||
+                (!affordable && !canLoan) ||
+                (isStock && stockLots === '')
+              }
             >
               {affordable ? '买入' : purchaseGate.allowed ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}
             </button>

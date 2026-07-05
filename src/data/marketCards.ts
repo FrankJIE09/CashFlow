@@ -12,9 +12,9 @@ export const MARKET_CARDS: MarketCard[] = [
   {
     id: 'market_buyout',
     title: '资产收购要约',
-    description: '有买家以 2 倍价格收购你的房产类资产。',
+    description: '机构买家溢价 15% 收购你的房产类资产。',
     type: 'market',
-    effect: { type: 'buyout', targetAssetType: 'realEstate', multiplier: 2 },
+    effect: { type: 'buyout', targetAssetType: 'realEstate', multiplier: 1.15 },
   },
   {
     id: 'market_buyers_market',
@@ -461,13 +461,13 @@ export const MARKET_CARDS: MarketCard[] = [
   {
     id: 'buyout_premium',
     title: '场外收购要约',
-    description: '有买家向你持有的某只股票发出溢价收购要约，可按 130% 市价卖出。',
+    description: '有买家向你持有的某只股票发出溢价 20% 的收购要约。',
     type: 'market',
     effect: {
       type: 'buyout',
       targetAssetType: 'stock',
-      multiplier: 1.3,
-      buyoutPremium: 0.3,
+      multiplier: 1.2,
+      buyoutPremium: 0.2,
     },
   },
   {
