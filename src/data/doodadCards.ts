@@ -65,6 +65,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     type: 'doodad',
     cost: 3000,
     isRecurring: false,
+    filterConfig: { requiresLiabilityType: 'carLoan', requiresAssetSector: '汽车' },
   },
   // 【新增】v3.2 家庭紧急事件卡
   {

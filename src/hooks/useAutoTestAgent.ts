@@ -10,7 +10,7 @@ import {
   isStockLotAsset,
   previewRepayment,
   stockLotBuyCost,
-  judgeStockValuation,
+  calcCurrentStockPrice,
 } from '../utils/financial';
 import type { AssetType, Card, Player } from '../types/game';
 
@@ -223,9 +223,11 @@ export function useAutoTestAgent() {
         // 【新增】v3.6 AI 偶尔卖出严重高估股票
         const overvaluedStock = player.assets.find((a) => {
           if (!isStockLotAsset(a) || a.basePe == null) return false;
-          const currentPe = a.currentPe ?? a.basePe;
-          const valuation = judgeStockValuation(currentPe, a.basePe);
-          return valuation === 'severeOvervalue' && (a.shareHand ?? 0) >= 1;
+          const currentPrice = calcCurrentStockPrice(a);
+          const fairValue = a.intrinsicPrice ?? 0;
+          if (fairValue <= 0) return false;
+          const priceRatio = currentPrice / fairValue;
+          return priceRatio > 1.1 && (a.shareHand ?? 0) >= 1;
         });
         if (overvaluedStock && Math.random() < 0.4) {
           const sellHand = Math.ceil((overvaluedStock.shareHand ?? 0) * 0.5);

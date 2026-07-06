@@ -18,7 +18,6 @@ import {
   remarriageCost,
   pregnancyMedicalCost,
   judgeStockValuation,
-  getStockBasePe,
   getValuationLabel,
   calcCurrentStockPrice,
 } from '../../utils/financial';
@@ -656,7 +655,10 @@ export function CardModal() {
     const isDiscounted = space.type === 'market';
     const isStock = isStockLotAsset(asset);
     const lots = isStock ? (stockLots === '' ? 0 : Math.max(1, Math.floor(stockLots))) : 1;
-    const lotPrincipal = isStock ? lots * 100 * (asset.singlePrice ?? 0) : asset.downPayment;
+    const effectivePrice = isStock
+      ? calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier)
+      : 0;
+    const lotPrincipal = isStock ? lots * 100 * effectivePrice : asset.downPayment;
     const lotCashFlow = isStock
       ? Math.round((lots * 100 * (asset.yearDivPerShare ?? 0)) / 12)
       : asset.cashFlow;
@@ -664,7 +666,7 @@ export function CardModal() {
     const stockLotsValid = stockLots !== '';
     const stockLotsNum = stockLotsValid ? Math.max(1, Math.floor(stockLots as number)) : 1;
     const totalBuyCost = isStock
-      ? (stockLotsValid ? stockLotBuyCost(stockLotsNum, asset.singlePrice ?? 0) + (card.dueDiligenceCost ?? 0) : 0)
+      ? (stockLotsValid ? stockLotBuyCost(stockLotsNum, effectivePrice) + (card.dueDiligenceCost ?? 0) : 0)
       : calculateBuyCost(asset) + (card.dueDiligenceCost ?? 0);
     const affordable = isStock ? (stockLotsValid && player.cash >= totalBuyCost) : player.cash >= totalBuyCost;
     const shortfall = totalBuyCost - player.cash;
@@ -699,7 +701,7 @@ export function CardModal() {
                   className={styles.lotInput}
                 />
               </label>
-              <div>单价 {formatCurrency(asset.singlePrice ?? 0)} × {lots} 手 = {formatCurrency(lots * 100 * (asset.singlePrice ?? 0))}</div>
+              <div>单价 {formatCurrency(effectivePrice)} × {lots} 手 = {formatCurrency(lots * 100 * effectivePrice)}</div>
               <div>含佣金总支出：{formatCurrency(totalBuyCost)}</div>
             </div>
           )}
@@ -726,22 +728,21 @@ export function CardModal() {
             </div>
           )}
 
-          {/* 【新增】v3.6 PE 估值提示 */}
-          {isStock && asset.basePe != null && asset.currentPe != null && (
+          {/* 【新增】v3.6 PE 估值提示（仅限股票类资产） */}
+          {isStock && (asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative') && asset.basePe != null && asset.currentPe != null && (
             <div className={styles.valuationHint}>
               {(() => {
-                const basePe = getStockBasePe(asset);
-                const currentPe = asset.currentPe ?? basePe;
-                const valuation = judgeStockValuation(currentPe, basePe);
-                const hintLabel = getValuationLabel(valuation);
+                const intrinsicPrice = asset.intrinsicPrice ?? 0;
                 const price = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
+                const valuation = judgeStockValuation(price, intrinsicPrice);
+                const hintLabel = getValuationLabel(valuation);
                 return (
                   <span>
-                    当前PE {currentPe.toFixed(1)}，行业中枢PE {basePe.toFixed(1)}，标的{hintLabel}
+                    合理价值 {formatCurrency(intrinsicPrice)}，现价 {formatCurrency(price)}，标的{hintLabel}
                     {valuation === 'deepUndervalue' && ' 💎'}
-                    {valuation === 'severeOvervalue' && ' ⚠️'}
+                    {valuation === 'undervalue' && ' 🔍'}
                     {valuation === 'fair' && ' ✅'}
-                    （市价 {formatCurrency(price)}）
+                    {valuation === 'overvalue' && ' ⚠️'}
                   </span>
                 );
               })()}
@@ -763,13 +764,13 @@ export function CardModal() {
             </div>
             {isStock && (
               <div className={styles.assetRow}>
-                <span>发行价</span>
-                <span>{formatCurrency(asset.singlePrice ?? 0)}/份</span>
+                <span>合理价值</span>
+                <span>{formatCurrency(asset.intrinsicPrice ?? 0)}/份</span>
               </div>
             )}
             {isStock && (
               <div className={styles.assetRow}>
-                <span>市价</span>
+                <span>现价</span>
                 <span>{formatCurrency(calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier))}/份</span>
               </div>
             )}

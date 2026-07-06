@@ -3,7 +3,7 @@
 > 基于罗伯特·清崎《富爸爸穷爸爸》改编的桌面棋盘游戏。  
 > 本文档是 React + TypeScript + Vite 技术方案下的完整设计、数据结构与开发指南。
 
-**【调整】文档版本：v3.7 · 最后更新：2026-07-04**（v3.1 及以前内容保持不变；v3.2/v3.3/v3.4 仅追加【新增】标记段落；v3.5 见第十七章；v3.7 见第十八章）
+**【调整】文档版本：v3.8 · 最后更新：2026-07-06**（v3.1 及以前内容保持不变；v3.2/v3.3/v3.4 仅追加【新增】标记段落；v3.5 见第十七章；v3.7 见第十八章；v3.8 见第十九章）
 
 ---
 
@@ -2621,7 +2621,63 @@ MarketEffect: inflationDelta?, insuranceCoverage?
 | 保险覆盖率（医疗） | 70% |
 | 大病免赔额 | ¥2,000-3,000 |
 
+## 十九、【新增】v3.8 股票估值联动体系
+
+### 19.1 核心公式
+
+```
+合理价值 = EPS × 行业中枢PE（固定值，仅估值参考）
+现价    = 合理价值 × 当前动态PE ÷ 行业中枢PE（唯一成交价格，不含额外乘数）
+```
+
+### 19.2 联动传导链路
+
+```
+市场波动（marketMultiplier / sectorMultiplier）
+  → 折算为当前动态PE(currentPe)同比例变化
+  → 现价 = 合理价值 × newPe ÷ basePe 同步更新
+  → PB = 原PB × (新现价 ÷ 旧现价) 同比例浮动
+  → 股息率 = 每股年度分红 ÷ 新现价（价格涨则股息率降）
+```
+
+### 19.3 权益类 vs 非权益类
+
+| 类型 | 现价计算 | 使用乘数 | 适用PE估值 |
+|------|---------|---------|-----------|
+| 股票(stock) | `intrinsicPrice × currentPe / basePe` | ❌ 移除 | ✅ |
+| 海外(overseas) | `intrinsicPrice × currentPe / basePe` | ❌ 移除 | ✅ |
+| 衍生品(derivative) | `intrinsicPrice × currentPe / basePe` | ❌ 移除 | ✅ |
+| REITs/债券/商品 | `singlePrice × multiplier` | ✅ 保留 | ❌ |
+
+### 19.4 月度联动（applyMonthlyStockPeDrift）
+
+1. 每个游戏月对持仓权益资产施加 ±6% 随机 PE 漂移
+2. PE 变化后自动同步刷新 PB 和 dividendYield
+3. 漂移限制在 `basePe × 0.4 ~ basePe × 2.0`
+
+### 19.5 市场事件联动
+
+- 宏观事件（inflationEvent）：通胀/通紧缩 → 修改 marketMultiplier → 折算为 currentPe 变化 → 重置乘数
+- 利率变动：升降息 → 修改股票/衍生品 marketMultiplier → 折算为 currentPe → 重置乘数
+- 行业事件（sectorBasePeDelta）：修改 basePe 后同步刷新 PB 和股息率
+- 个股事件（stockPeDelta）：使用 `updateStockPeByPercent`（内部自动同步 PB/股息率）
+
+### 19.6 关键代码变更
+
+| 文件 | 变更内容 |
+|------|---------|
+| `src/utils/financial.ts` | `calcCurrentStockPrice` 中 equity 类移除 `marketMult × sectorMult`；新增 `syncPbAndDivYieldOnPeChange`；`updateStockPeByPercent/ByEvent` 内部调用 PB/股息同步 |
+| `src/context/GameReducer.ts` | 新增 `convertEquityMultiplierToPe` 函数；`applyMonthlyMarketDrift` 计算乘数漂移后调用转换；`applyMonthlyStockPeDrift` 调用 PB/股息同步；`applyAssetImpacts`/`applyInterestRateChange`/`inflationEvent` 修改乘数后均调用转换并重置 |
+
+### 19.7 校验规则
+
+1. PE 上涨 → 现价涨 → PB 涨 → 股息率降（完美联动）
+2. PE 下跌 → 现价跌 → PB 跌 → 股息率升（完美联动）
+3. 月度 ±6% PE 漂移保留，且同步到 PB/股息率
+4. 非权益资产价格不受 PE 联动改造影响
+5. 月股息现金流仍锚定 `yearDivPerShare`（合理价值 × 初始股息率），不受市价波动影响
+
 ---
 
-*文档版本：v3.7*
-*最后更新：2026-07-04*
+*文档版本：v3.8*
+*最后更新：2026-07-06*

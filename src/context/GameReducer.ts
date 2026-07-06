@@ -57,6 +57,8 @@ import {
   stockLotSellProceeds,
   updateStockPeByPercent,
   getStockBasePe,
+  calcCurrentStockPrice,
+  syncPbAndDivYieldOnPeChange,
   getRentExpense,
 } from '../utils/financial';
 import { applyInsuranceDeductible } from '../utils/financial';
@@ -595,28 +597,78 @@ function findNextActivePlayer(state: GameState): number {
   return index;
 }
 
-/** 每月市场自然波动：资产价格随机游走 + 均值回归，使市场动态贴近真实 */
+/** 每月市场自然波动：资产价格随机游走 + 均值回归
+ * 权益类（stock/overseas/derivative）：乘数波动转为 currentPe 同比例变化，然后重置乘数为 1
+ * 非权益类：保留乘数直接作用于价格
+ */
 function applyMonthlyMarketDrift(state: GameState): GameState {
-  const newMult = { ...state.marketMultiplier };
-  const newCF = { ...state.cashFlowMultiplier };
+  let newMult = { ...state.marketMultiplier };
+  let newCF = { ...state.cashFlowMultiplier };
+  let newSector = { ...state.sectorMultiplier };
 
-  // 波动参数：每月 ±2%~3%
   const VOLATILITY = 0.025;
-  // 均值回归力度：每月向 1.0 回归 5%
   const MEAN_REVERSION = 0.05;
 
+  // 对所有资产类型做随机游走 + 均值回归
   for (const type of Object.keys(newMult) as AssetType[]) {
-    // 向 1.0 回归
     const pull = (1 - newMult[type]) * MEAN_REVERSION;
-    // 随机游走
     const walk = (Math.random() - 0.5) * VOLATILITY * 2;
     const delta = pull + walk;
-
     newMult[type] = Math.max(0.5, Math.min(2.5, newMult[type] + newMult[type] * delta));
     newCF[type] = Math.max(0.5, Math.min(2.5, newCF[type] + newCF[type] * delta));
   }
 
-  return { ...state, marketMultiplier: newMult, cashFlowMultiplier: newCF };
+  // sectorMultiplier 也做自然波动
+  for (const sector of Object.keys(newSector)) {
+    const pull = (1 - newSector[sector]) * MEAN_REVERSION;
+    const walk = (Math.random() - 0.5) * VOLATILITY * 2;
+    const delta = pull + walk;
+    newSector[sector] = Math.max(0.5, Math.min(2.5, newSector[sector] + newSector[sector] * delta));
+  }
+
+  let newState = { ...state, marketMultiplier: newMult, cashFlowMultiplier: newCF, sectorMultiplier: newSector };
+
+  // 将 equity 类型的乘数变动折算到 currentPe，然后重置乘数为 1
+  newState = convertEquityMultiplierToPe(newState);
+
+  return newState;
+}
+
+/** 将 equity 类资产的市场乘数 / 行业乘数变动折算到 currentPe */
+function convertEquityMultiplierToPe(state: GameState): GameState {
+  const EQUITY_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'overseas', 'derivative']);
+  const { marketMultiplier, sectorMultiplier } = state;
+
+  const newPlayers = state.players.map((player) => ({
+    ...player,
+    assets: player.assets.map((asset) => {
+      if (!isStockLotAsset(asset) || asset.basePe == null) return asset;
+      if (!EQUITY_TYPES.has(asset.type)) return asset;
+
+      const typeMult = marketMultiplier[asset.type] ?? 1;
+      const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+      const combinedRate = typeMult * sectorMult;
+
+      if (Math.abs(combinedRate - 1) < 0.001) return asset;
+
+      const basePe = asset.basePe!;
+      const oldPe = asset.currentPe ?? basePe;
+      let newPe = oldPe * combinedRate;
+      const minPe = basePe * 0.4;
+      const maxPe = basePe * 2.0;
+      newPe = Math.max(minPe, Math.min(maxPe, Math.round(newPe * 100) / 100));
+
+      return syncPbAndDivYieldOnPeChange(asset, newPe);
+    }),
+  }));
+
+  // 重置 equity 类型的 marketMultiplier 为 1
+  const newMarketMult = { ...marketMultiplier };
+  for (const t of EQUITY_TYPES) {
+    newMarketMult[t] = 1;
+  }
+
+  return { ...state, players: newPlayers, marketMultiplier: newMarketMult };
 }
 
 /**
@@ -634,8 +686,8 @@ function applyMonthlyStockPeDrift(state: GameState): GameState {
       let newPe = currentPe * (1 + driftPct);
       const minPe = basePe * 0.4;
       const maxPe = basePe * 2.0;
-      newPe = Math.max(minPe, Math.min(maxPe, newPe));
-      return { ...asset, currentPe: Math.round(newPe * 100) / 100 };
+      newPe = Math.max(minPe, Math.min(maxPe, Math.round(newPe * 100) / 100));
+      return syncPbAndDivYieldOnPeChange(asset, newPe);
     });
     return { ...player, assets };
   });
@@ -939,7 +991,9 @@ function executeBuyAsset(
     if (!Number.isInteger(lots) || lots < 1) {
       return addLog(state, player.id, `${player.name} 股票须按整手买入（1手=100股）`, 'system');
     }
-    finalAsset = buildStockLotAsset(asset, lots, state.round);
+    // 用当前市价（含市场/行业乘数）作为买入价
+    const effectivePrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
+    finalAsset = buildStockLotAsset({ ...asset, singlePrice: effectivePrice }, lots, state.round);
   }
 
   const buyCost = calculateBuyCost(finalAsset, isStockLotAsset(finalAsset) ? finalAsset.shareHand : undefined) + dueDiligenceCost;
@@ -1059,6 +1113,8 @@ function applyInterestRateChange(
       mMult[t] = Math.max(0.5, Math.min(2.5, mMult[t] * halfImpact));
     }
     newState = { ...newState, marketMultiplier: mMult, cashFlowMultiplier: cMult };
+    // 将 equity 类型的利率乘数变动折算到 currentPe 并重置
+    newState = convertEquityMultiplierToPe(newState);
   }
 
   const prefix = cardTitle ? `【${cardTitle}】` : '';
@@ -1109,6 +1165,9 @@ function applyAssetImpacts(state: GameState, playerId: string, cardTitle: string
 
     newState = { ...newState, marketMultiplier, cashFlowMultiplier, sectorMultiplier };
   }
+
+  // 将 equity 类型的乘数变动折算到 currentPe 并重置
+  newState = convertEquityMultiplierToPe(newState);
 
   if (effect.rateChange) {
     newState = applyInterestRateChange(newState, playerId, effect.rateChange);
@@ -1318,6 +1377,8 @@ function applyMarketEffect(state: GameState, playerIndex: number): GameState {
           cashFlowM[type] = Math.max(0.1, cashFlowM[type] * delta);
         }
         newState = { ...newState, marketMultiplier: multiplier, cashFlowMultiplier: cashFlowM };
+        // 将 equity 类型的通胀乘数变动折算到 currentPe 并重置
+        newState = convertEquityMultiplierToPe(newState);
         const dir = effect.inflationDelta > 0 ? '通胀' : '通缩';
         const pct = (Math.abs(effect.inflationDelta) * 100).toFixed(0);
         newState = addLog(newState, player.id, `【${card.title}】${dir} ${pct}%，现金购买力${effect.inflationDelta > 0 ? '下降' : '上升'}`, 'market');
@@ -1692,6 +1753,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         humanProfessionId,
         customProfession,
         cityId,
+        humanGender,
         aiCount,
         aiDifficulty,
         testMode,
@@ -1702,6 +1764,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         humanProfessionId,
         customProfession,
         cityId: cityId ?? DEFAULT_CITY_ID,
+        humanGender,
         aiCount,
         aiDifficulty,
         testMode,
@@ -2750,8 +2813,6 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         remaining.basePe = stockAsset.basePe;
         remaining.currentPe = stockAsset.currentPe;
         remaining.intrinsicPrice = stockAsset.intrinsicPrice;
-        remaining.originalSinglePrice = stockAsset.originalSinglePrice;
-        remaining.buyPe = stockAsset.buyPe;
         return {
           ...p,
           cash: p.cash + sellPrice,
@@ -2856,6 +2917,16 @@ function passesCardFilter(player: Player, card: DoodadCard): boolean {
   if (cfg.retired === false && player.isRetired) return false;
   if (cfg.unemployed === true && !player.isUnemployed) return false;
   if (cfg.unemployed === false && player.isUnemployed) return false;
+  // 持有负债或资产检查（两者任一满足即可，OR 逻辑）
+  if (cfg.requiresLiabilityType || cfg.requiresAssetSector) {
+    const hasLiability = cfg.requiresLiabilityType
+      ? player.liabilities.some((l) => l.debtType === cfg.requiresLiabilityType)
+      : false;
+    const hasAsset = cfg.requiresAssetSector
+      ? player.assets.some((a) => a.metadata?.sector === cfg.requiresAssetSector)
+      : false;
+    if (!hasLiability && !hasAsset) return false;
+  }
   return true;
 }
 

@@ -8,7 +8,6 @@ import {
   getAssetMarketValue,
   getAssetTypeLabel,
   calcCurrentStockPrice,
-  getStockBuyPrice,
   getStockPriceChange,
   getStockCurrentPb,
   getStockBasePe,
@@ -100,20 +99,20 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
     // 证券类资产价格信息
     let priceInfo: React.ReactNode = null;
     if (stockLike) {
-      const buyPrice = getStockBuyPrice(asset);
+      const fairValue = asset.intrinsicPrice ?? 0;
       const curPrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
       const changePct = getStockPriceChange(asset, state.marketMultiplier, state.sectorMultiplier);
       const isUp = changePct >= 0;
       const pb = getStockCurrentPb(asset);
       const basePe = getStockBasePe(asset);
       const currentPe = asset.currentPe ?? basePe;
-      const buyPe = asset.buyPe;
       const divYield = asset.metadata?.dividendYield;
+      const isEquityPE = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
 
       priceInfo = (
         <div className={styles.priceRow}>
           <span className={styles.priceItem}>
-            买入价 <strong>{formatCurrency(buyPrice)}</strong>
+            合理价值 <strong>{formatCurrency(fairValue)}</strong>
           </span>
           <span className={styles.priceArrow}>→</span>
           <span className={styles.priceItem}>
@@ -123,15 +122,12 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
             {isUp ? '+' : ''}{changePct.toFixed(1)}%
           </span>
           <span className={styles.priceDivider}>|</span>
-          {currentPe != null && (
+          {isEquityPE && currentPe != null && (
             <span className={styles.priceItem}>
               PE <strong>{currentPe.toFixed(1)}</strong>
-              {buyPe != null && buyPe !== currentPe && (
-                <span className={styles.priceSub}>（买入{buyPe.toFixed(1)}）</span>
-              )}
             </span>
           )}
-          {pb != null && (
+          {isEquityPE && pb != null && (
             <span className={styles.priceItem}>
               PB <strong>{pb.toFixed(2)}</strong>
             </span>

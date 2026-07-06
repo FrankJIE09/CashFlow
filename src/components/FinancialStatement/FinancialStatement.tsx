@@ -268,24 +268,26 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                     ? liquidateAssetSecret(asset, state.marketMultiplier, state.sectorMultiplier)
                     : null;
 
-                  // v3.6 PE 显示
+                  // v3.6 PE 显示（仅限股票类资产）
                   const isStock = isStockLotAsset(asset);
+                  const isEquityPE = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
                   let peInfo = null;
-                  if (isStock) {
+                  if (isStock && isEquityPE) {
                     const basePe = getStockBasePe(asset);
                     const currentPe = asset.currentPe ?? basePe;
-                    const valuation = judgeStockValuation(currentPe, basePe);
                     const currentPrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
-                    const buyPrice = asset.originalSinglePrice ?? asset.singlePrice ?? 0;
-                    const profit = currentPrice - buyPrice;
+                    const totalShares = (asset.shareHand ?? 0) * 100;
+                    const buyPrice = totalShares > 0 ? (asset.cost ?? 0) / totalShares : 0;
                     const intrinsicPrice = asset.intrinsicPrice ?? 0;
+                    const valuation = judgeStockValuation(currentPrice, intrinsicPrice);
+                    const profit = currentPrice - buyPrice;
                     peInfo = (
                       <div className={styles.peInfo}>
                         <span>行业中枢PE {basePe.toFixed(1)} | 动态PE {currentPe.toFixed(1)}</span>
                         <span className={`${styles.valuationTag} ${styles[valuation]}`}>
                           {getValuationLabel(valuation)}
                         </span>
-                        <span>内在价值 {formatCurrency(intrinsicPrice)} | 现价 {formatCurrency(currentPrice)}</span>
+                        <span>合理价值 {formatCurrency(intrinsicPrice)} | 现价 {formatCurrency(currentPrice)}</span>
                         <span>持仓成本 {formatCurrency(buyPrice)} | 浮盈/浮亏 {profit >= 0 ? '+' : ''}{formatCurrency(profit)}</span>
                       </div>
                     );

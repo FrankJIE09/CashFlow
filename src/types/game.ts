@@ -203,10 +203,7 @@ export interface Asset {
   currentPe?: number;
   /** 【新增】v3.6 基础内在价值 = yearDivPerShare × basePe */
   intrinsicPrice?: number;
-  /** 【新增】v3.6 买入时的成本单价 */
-  originalSinglePrice?: number;
-  /** 【新增】v3.6 买入时的 PE */
-  buyPe?: number;
+  // ★ v3.10 已删除: originalSinglePrice, buyPe（买入成本从 cost 反算）
   metadata?: AssetMetadata;
   /** 【新增】v3.10 是否为自住居所 */
   isSelfLiving?: boolean;
@@ -437,6 +434,10 @@ export interface DoodadCard extends BaseCard {
     retired?: boolean;
     /** true=仅失业触发 false=仅在职触发 undefined=不限 */
     unemployed?: boolean;
+    /** 玩家持有指定类型的负债时才触发（如车贷→汽车维修） */
+    requiresLiabilityType?: DebtType;
+    /** 玩家持有指定 sector 的资产时才触发（如 sector:'汽车'→汽车维修） */
+    requiresAssetSector?: string;
   };
 }
 

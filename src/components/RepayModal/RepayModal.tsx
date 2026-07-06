@@ -30,11 +30,7 @@ export function RepayModal({ player, onClose, initialLiability = null, nested = 
     if (repayableLiabilities.length === 1) return repayableLiabilities[0];
     return null;
   });
-  const [repayAmount, setRepayAmount] = useState(() => {
-    const target = initialLiability ?? (repayableLiabilities.length === 1 ? repayableLiabilities[0] : null);
-    if (!target) return 1000;
-    return Math.min(target.principal, Math.max(1000, Math.floor(player.cash * 0.2)));
-  });
+  const [repayAmount, setRepayAmount] = useState<number>(0);
 
   const showPicker = !repayTarget;
   const repayPreview = repayTarget ? previewRepayment(repayTarget, repayAmount) : null;
@@ -44,7 +40,7 @@ export function RepayModal({ player, onClose, initialLiability = null, nested = 
 
   const handleSelectLiability = (liability: Liability) => {
     setRepayTarget(liability);
-    setRepayAmount(Math.min(liability.principal, Math.max(1000, Math.floor(player.cash * 0.2))));
+    setRepayAmount(0);
   };
 
   const handleConfirmRepay = () => {
@@ -116,16 +112,16 @@ export function RepayModal({ player, onClose, initialLiability = null, nested = 
                   <button
                     type="button"
                     className={`${styles.quickBtn} cartoon-button`}
-                    onClick={() => setRepayAmount(Math.min(1000, repayTarget.principal))}
-                    disabled={repayTarget.principal < 1000}
+                    onClick={() => setRepayAmount(Math.min(repayAmount + 1000, repayTarget.principal))}
+                    disabled={repayTarget.principal <= repayAmount}
                   >
                     1,000
                   </button>
                   <button
                     type="button"
                     className={`${styles.quickBtn} cartoon-button`}
-                    onClick={() => setRepayAmount(Math.min(10000, repayTarget.principal))}
-                    disabled={repayTarget.principal < 10000}
+                    onClick={() => setRepayAmount(Math.min(repayAmount + 10000, repayTarget.principal))}
+                    disabled={repayTarget.principal <= repayAmount}
                   >
                     10,000
                   </button>

@@ -1,9 +1,11 @@
 /**
  * Headless auto-test runner — mirrors useAutoTestAgent decisions via gameReducer.
  * Usage: npx tsx scripts/runAutoTest.ts [rounds]
+ *
+ * v3.8: 大幅扩展每回合快照数据，支持人工/AI 事后审查异常模式
  */
 import { gameReducer, getInitialGameState } from '../src/context/GameReducer.ts';
-import type { AssetType, Card, GameAction, GameState, Player } from '../src/types/game.ts';
+import type { AssetType, Card, GameAction, GameState, Player, Asset } from '../src/types/game.ts';
 import {
   canPurchaseOpportunity,
   checkBankruptcy,
@@ -15,12 +17,56 @@ import {
   isStockLotAsset,
   previewRepayment,
   stockLotBuyCost,
-  judgeStockValuation,
+  calcCurrentStockPrice,
+  calcCurrentStockMarketValue,
+  getStockBasePe,
+  getTotalAssetsValue,
+  getNetWorth,
 } from '../src/utils/financial.ts';
 import { rollDice, rollTwoDice } from '../src/utils/random.ts';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 const DEFENSIVE_SECTORS = new Set(['金融', '公用事业', '消费', '利率债', '贵金属']);
 const GROWTH_SECTORS = new Set(['科技', '新能源', '先进制造']);
+
+// ──────────────────────────────────────────────
+// 丰富快照类型：涵盖玩家画像、持仓估值、负债结构、市场状态
+// ──────────────────────────────────────────────
+interface RichSnapshot {
+  round: number;
+  phase: string;
+  // 玩家画像
+  age: number;
+  gender: string;
+  marriageStatus: string;
+  happiness: number;
+  children: number;
+  unemployed: boolean;
+  retired: boolean;
+  isBankrupt: boolean;
+  // 财务概览
+  cash: number;
+  cashFlow: number;
+  salary: number;
+  passiveIncome: number;
+  expenses: number;
+  netWorth: number;
+  totalAssetsValue: number;
+  // 负债
+  liabilityCount: number;
+  liabilityTotalPrincipal: number;
+  rentExpense: number;
+  // 持仓股票明细（摘要）
+  stockCount: number;
+  stockTotalValue: number;
+  stockTotalCost: number;
+  stockPositions: string[]; // "名称:PE/PB/股息率/浮盈%" 摘要文本
+  // 市场状态
+  interestRate: number;
+  marketEvent: string; // 最近发生的市场事件
+}
 
 function dispatch(state: GameState, action: GameAction): GameState {
   return gameReducer(state, action);
@@ -173,7 +219,6 @@ function autoStep(state: GameState): GameState {
         return dispatch(state, { type: 'DECLINE_CARD' });
       }
       if (player.marriageStatus === 'married') {
-        // 已婚 → 育儿逻辑
         if (player.hasPregnancy) {
           return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'postpone' } });
         }
@@ -186,7 +231,6 @@ function autoStep(state: GameState): GameState {
         }
         return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'postpone' } });
       }
-      // 单身/离异 → 结婚/再婚逻辑
       const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
       return dispatch(state, { type: 'CHOOSE_MARRIAGE', payload: { marry: cashFlow > 2000 } });
     }
@@ -273,12 +317,13 @@ function autoStep(state: GameState): GameState {
       return dispatch(state, { type: 'TAKE_LOAN', payload: { amount: Math.abs(player.cash) + 1000 } });
     }
 
-    // 【新增】v3.6 AI 偶尔卖出严重高估股票
+    // AI 偶尔卖出估值偏高股票（基于现价/合理价值，非旧 PE 比值）
     const overvaluedStock = player.assets.find((a) => {
       if (!isStockLotAsset(a) || a.basePe == null) return false;
-      const currentPe = a.currentPe ?? a.basePe;
-      const valuation = judgeStockValuation(currentPe, a.basePe);
-      return valuation === 'severeOvervalue' && (a.shareHand ?? 0) >= 1;
+      const curPrice = calcCurrentStockPrice(a);
+      const fairValue = a.intrinsicPrice ?? 0;
+      if (fairValue <= 0) return false;
+      return curPrice / fairValue > 1.1 && (a.shareHand ?? 0) >= 1;
     });
     if (overvaluedStock && Math.random() < 0.4) {
       const sellHand = Math.ceil((overvaluedStock.shareHand ?? 0) * 0.5);
@@ -317,9 +362,145 @@ function autoStep(state: GameState): GameState {
   return state;
 }
 
+/** 构建丰富快照 */
+function buildSnapshot(state: GameState): RichSnapshot {
+  const p = state.players[state.currentPlayerIndex];
+  if (!p) {
+    return {
+      round: state.round, phase: state.phase,
+      age: 0, gender: '', marriageStatus: '', happiness: 0, children: 0,
+      unemployed: false, retired: false, isBankrupt: false,
+      cash: 0, cashFlow: 0, salary: 0, passiveIncome: 0, expenses: 0,
+      netWorth: 0, totalAssetsValue: 0,
+      liabilityCount: 0, liabilityTotalPrincipal: 0, rentExpense: 0,
+      stockCount: 0, stockTotalValue: 0, stockTotalCost: 0, stockPositions: [],
+      interestRate: state.interestRate, marketEvent: '',
+    };
+  }
+
+  const cf = getMonthlyCashFlow(p, state.cashFlowMultiplier, state.sectorMultiplier);
+  const stocks = p.assets.filter((a) => isStockLotAsset(a));
+  let stockTotalValue = 0;
+  let stockTotalCost = 0;
+  const stockPositions: string[] = [];
+
+  for (const a of stocks) {
+    const curPrice = calcCurrentStockPrice(a);
+    const mv = calcCurrentStockMarketValue(a);
+    stockTotalValue += mv;
+    stockTotalCost += a.cost ?? 0;
+
+    const basePe = getStockBasePe(a);
+    const currentPe = a.currentPe ?? basePe;
+    const fairValue = a.intrinsicPrice ?? 0;
+    const pct = a.cost && a.cost > 0 ? Math.round(((mv - a.cost) / a.cost) * 100) : 0;
+    const pb = a.metadata?.pb;
+    const divYield = a.metadata?.dividendYield;
+
+    const summary =
+      `${a.name} PE${currentPe.toFixed(1)}` +
+      (pb != null ? `/PB${pb.toFixed(2)}` : '') +
+      (divYield != null ? `/息${(divYield * 100).toFixed(1)}%` : '') +
+      `/浮${pct >= 0 ? '+' : ''}${pct}%` +
+      (fairValue > 0 ? `/合理¥${fairValue.toFixed(0)}` : '');
+    stockPositions.push(summary);
+  }
+
+  const totalPrincipal = p.liabilities.reduce((s, l) => s + l.principal, 0);
+
+  // 最近的日志（查找最近市场事件）
+  const recentLogs = state.logs.slice(-5).map((l) => l.message).join('; ');
+
+  return {
+    round: state.round,
+    phase: state.phase,
+    age: p.age ?? 0,
+    gender: p.gender ?? '',
+    marriageStatus: p.marriageStatus ?? '',
+    happiness: p.marriageHappiness ?? 0,
+    children: p.children ?? 0,
+    unemployed: p.isUnemployed ?? false,
+    retired: p.isRetired ?? false,
+    isBankrupt: p.isBankrupt ?? false,
+    cash: p.cash ?? 0,
+    cashFlow: cf,
+    salary: p.salary ?? 0,
+    passiveIncome: getPassiveIncome(p, state.cashFlowMultiplier, state.sectorMultiplier),
+    expenses: getTotalExpenses(p),
+    netWorth: getNetWorth(p, state.marketMultiplier, state.sectorMultiplier),
+    totalAssetsValue: getTotalAssetsValue(p, state.marketMultiplier, state.sectorMultiplier),
+    liabilityCount: p.liabilities.length,
+    liabilityTotalPrincipal: totalPrincipal,
+    rentExpense: p.rentExpense ?? 0,
+    stockCount: stocks.length,
+    stockTotalValue,
+    stockTotalCost,
+    stockPositions,
+    interestRate: state.interestRate,
+    marketEvent: recentLogs,
+  };
+}
+
+/** 端到端分析：遍历快照识别异常模式 */
+function analyzeAnomalies(snapshots: RichSnapshot[]): string[] {
+  const warnings: string[] = [];
+
+  for (const s of snapshots) {
+    // 股价与合理价值偏差过大
+    for (const pos of s.stockPositions) {
+      const m = pos.match(/浮([+-]\d+)%/);
+      if (m) {
+        const pct = parseInt(m[1], 10);
+        if (pct > 200) warnings.push(`R${s.round} ${pos.split(' ')[0]} 浮盈${pct}% 异常偏高`);
+        if (pct < -80) warnings.push(`R${s.round} ${pos.split(' ')[0]} 亏损${pct}% 需关注`);
+      }
+    }
+
+    // 月现金流/月支出比异常（严重入不敷出）
+    if (s.expenses > 0 && s.cashFlow / s.expenses < -0.8 && s.cash > 10000) {
+      warnings.push(`R${s.round} 现金流/支出比 ${(s.cashFlow / s.expenses * 100).toFixed(0)}% 但现金仍充裕（¥${s.cash}），可能未触发破产`);
+    }
+
+    // 子女数+幸福度异常
+    if (s.children > 0 && s.happiness > 90) {
+      warnings.push(`R${s.round} 有${s.children}子但幸福度${s.happiness}极高，可能未施加育儿惩罚`);
+    }
+
+    // 负债笔数多但金额小（零碎负债扣月供但影响不大）
+    if (s.liabilityCount >= 5 && s.liabilityTotalPrincipal < 10000) {
+      warnings.push(`R${s.round} 负债${s.liabilityCount}笔但总额仅¥${s.liabilityTotalPrincipal}，疑似零碎负债堆积`);
+    }
+  }
+
+  // 跨回合模式：工资未发持续多回合
+  let salaryDryStreak = 0;
+  for (const s of snapshots) {
+    if (s.unemployed) {
+      salaryDryStreak++;
+    } else {
+      if (salaryDryStreak >= 6) {
+        warnings.push(`失业持续 ${salaryDryStreak} 回合未再就业`);
+      }
+      salaryDryStreak = 0;
+    }
+  }
+
+  // 跨回合模式：现金持续下降但无破产
+  let cashDropCount = 0;
+  for (let i = 1; i < snapshots.length; i++) {
+    const prev = snapshots[i - 1];
+    const cur = snapshots[i];
+    if (prev.cash > 0 && cur.cash < prev.cash * 0.5) {
+      cashDropCount++;
+    }
+  }
+  if (cashDropCount >= 5) warnings.push(`现金在 ${cashDropCount} 个回合出现骤降(>50%)，可能隐瞒破产条件`);
+
+  return warnings;
+}
+
 function runAutoTest(maxRounds: number, seed?: number): GameState {
   if (seed !== undefined) {
-    // deterministic runs for debugging
     let s = seed;
     Math.random = () => {
       s = (s * 16807 + 0) % 2147483647;
@@ -333,6 +514,7 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
       humanPlayerName: '测试员',
       humanProfessionId: 'engineer',
       cityId: 'shanghai',
+      humanGender: 'female',
       testMode: true,
       testMaxRounds: maxRounds,
     },
@@ -342,7 +524,7 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
   let steps = 0;
   let prevRound = 0;
   let prevPhase = state.phase;
-  const snapshotHistory: { round: number; cash: number; cashFlow: number; expenses: number; salary: number; passiveIncome: number; liabilities: number; rentExpense: number; phase: string; action: string }[] = [];
+  const snapshotHistory: RichSnapshot[] = [];
 
   while (state.phase !== 'GAME_OVER' && !state.testStopped && steps < maxSteps) {
     const before = state;
@@ -367,24 +549,10 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
     }
     if (state.round !== prevRound) {
       prevRound = state.round;
-      const p = state.players[state.currentPlayerIndex];
-      const cf = p ? getMonthlyCashFlow(p, state.cashFlowMultiplier, state.sectorMultiplier) : 0;
-      snapshotHistory.push({
-        round: state.round,
-        cash: p?.cash ?? 0,
-        cashFlow: cf,
-        expenses: p ? getTotalExpenses(p) : 0,
-        salary: p?.salary ?? 0,
-        passiveIncome: p ? getPassiveIncome(p, state.cashFlowMultiplier, state.sectorMultiplier) : 0,
-        liabilities: p?.liabilities.length ?? 0,
-        rentExpense: p?.rentExpense ?? 0,
-        phase: state.phase,
-        action: 'ROUND_START',
-      });
+      snapshotHistory.push(buildSnapshot(state));
       process.stdout.write(`\r回合 ${state.round}/${maxRounds} ...`);
     }
     if (state.phase === prevPhase && state.phase === 'MOVING') {
-      // MOVING should never persist in headless mode
       state = dispatch(state, { type: 'MOVE_PLAYER' });
     }
     prevPhase = state.phase;
@@ -392,18 +560,82 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
 
   console.log('');
 
-  // 打印详细数据追踪
+  // ── 打印逐回合宽表 ──
   if (snapshotHistory.length > 0) {
-    console.log('\n--- 逐回合数据分析 ---');
-    console.log('回合\t现金\t\t现金流\t\t支出\t\t工资\t\t被动收入\t负债数\t房租\t\t阶段');
-    for (const h of snapshotHistory) {
+    console.log('\n── 逐回合数据分析 ──');
+    const header = [
+      '回合', '阶段',
+      '年龄', '婚姻', '幸福', '子女',
+      '现金→', '现金流', '支出', '工资', '被动',
+      '负债笔', '负债总额',
+      '资产总值', '净资产',
+      '股票数', '股票市值',
+      '利率',
+    ];
+    console.log(header.join('\t'));
+    for (const s of snapshotHistory) {
       console.log(
-        `${h.round}\t${h.cash.toLocaleString().padStart(8)}\t${h.cashFlow.toLocaleString().padStart(8)}\t` +
-        `${h.expenses.toLocaleString().padStart(8)}\t${h.salary.toLocaleString().padStart(8)}\t` +
-        `${h.passiveIncome.toLocaleString().padStart(8)}\t${h.liabilities}\t${h.rentExpense.toLocaleString().padStart(8)}\t${h.phase}`
+        `${s.round}\t` +
+        `${s.phase.substring(0, 6)}\t` +
+        `${s.age}\t` +
+        `${s.marriageStatus === 'married' ? '已婚' : s.marriageStatus === 'single' ? '单身' : s.marriageStatus === 'divorced' ? '离异' : s.marriageStatus}\t` +
+        `${s.happiness}\t` +
+        `${s.children}\t` +
+        `${s.cash.toLocaleString().padStart(7)}\t` +
+        `${s.cashFlow.toLocaleString().padStart(5)}\t` +
+        `${s.expenses.toLocaleString().padStart(5)}\t` +
+        `${s.salary.toLocaleString().padStart(5)}\t` +
+        `${s.passiveIncome.toLocaleString().padStart(5)}\t` +
+        `${s.liabilityCount}\t` +
+        `${s.liabilityTotalPrincipal.toLocaleString().padStart(8)}\t` +
+        `${s.totalAssetsValue.toLocaleString().padStart(8)}\t` +
+        `${s.netWorth.toLocaleString().padStart(8)}\t` +
+        `${s.stockCount}\t` +
+        `${s.stockTotalValue.toLocaleString().padStart(8)}\t` +
+        `${(s.interestRate * 100).toFixed(2)}%`
       );
+      // 打印持仓摘要
+      if (s.stockPositions.length > 0) {
+        console.log(`  📊 ${s.stockPositions.join(' | ')}`);
+      }
+      // 打印市场事件
+      if (s.marketEvent) {
+        console.log(`  📰 ${s.marketEvent}`);
+      }
     }
   }
+
+  // ── 异常模式分析 ──
+  const anomalies = analyzeAnomalies(snapshotHistory);
+  if (anomalies.length > 0) {
+    console.log('\n── ⚠️ 异常模式警告 ──');
+    for (const w of anomalies) {
+      console.log(`  ⚠️  ${w}`);
+    }
+  } else {
+    console.log('\n✅ 未检测到明显异常模式');
+  }
+
+  // ── 保存完整快照到文件 ──
+  const __filename = fileURLToPath(import.meta.url);
+  const resultsDir = join(dirname(__filename), '..', 'test-output');
+  if (!existsSync(resultsDir)) mkdirSync(resultsDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const outFile = join(resultsDir, `test-run-${maxRounds}r-${timestamp}.json`);
+  const finalBugs = state.bugLogs ?? [];
+  writeFileSync(outFile, JSON.stringify({
+    meta: {
+      maxRounds,
+      roundsCompleted: state.round,
+      finalPhase: state.phase,
+      bugCount: finalBugs.length,
+      timestamp: new Date().toISOString(),
+    },
+    snapshots: snapshotHistory,
+    bugs: finalBugs,
+    anomalies,
+  }, null, 2), 'utf-8');
+  console.log(`\n💾 数据已保存到: ${outFile}`);
 
   return state;
 }

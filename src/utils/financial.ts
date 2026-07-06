@@ -74,27 +74,21 @@ export function buildStockLotAsset(
   lots: number,
   purchaseRound: number
 ): Asset {
-  const singlePrice = template.singlePrice ?? 0;
-  const yearDiv = template.yearDivPerShare ?? 0;
+  const singlePrice = template.singlePrice ?? 0;       // 购买时的现价（成交价）
+  const yearDiv = template.yearDivPerShare ?? 0;        // 年化每股股息（基于合理价值）
   const marketValue = lots * STOCK_LOT_SIZE * singlePrice;
   const monthlyDiv = Math.round((lots * STOCK_LOT_SIZE * yearDiv) / 12);
   const basePe = template.basePe ?? SECTOR_BASE_PE[template.metadata?.sector ?? ''] ?? 15;
-  const rawCurrentPe = template.currentPe ?? basePe;
-  // 内在价值 = 买入价 ÷ 当前PE × 行业中枢PE，使得初始现价 = 买入价
-  const intrinsicPrice = basePe > 0 && rawCurrentPe > 0
-    ? Math.round(singlePrice / rawCurrentPe * basePe)
-    : singlePrice;
-  const effectivePe = rawCurrentPe;
+  const currentPe = template.currentPe ?? basePe;
+  const intrinsicPrice = template.intrinsicPrice ?? 0;  // 合理价值来自模板，买入后不变
   return {
     ...template,
     shareHand: lots,
-    singlePrice,
+    singlePrice,              // 购买时的现价（用于计算成本基础）
     yearDivPerShare: yearDiv,
-    originalSinglePrice: singlePrice,
-    buyPe: effectivePe,
     basePe,
-    currentPe: effectivePe,
-    intrinsicPrice,
+    currentPe,
+    intrinsicPrice,           // 合理价值（模板继承，买入后固定）
     cost: marketValue,
     downPayment: marketValue,
     marketValue,
@@ -429,14 +423,17 @@ export function recalcLiabilityPaymentOnRateChange(
     remainingPeriods
   );
 
+  // 限制月供变动幅度：最高 3 倍旧月供，最低 0.5 倍
+  const cappedPayment = Math.max(oldPayment * 0.5, Math.min(oldPayment * 3, newPayment));
+
   return {
     liability: {
       ...liability,
       debtType,
-      monthlyPayment: newPayment,
+      monthlyPayment: cappedPayment,
       interestRate: monthRate * 12,
     },
-    delta: newPayment - oldPayment,
+    delta: cappedPayment - oldPayment,
   };
 }
 
@@ -1227,36 +1224,37 @@ export const SECTOR_BASE_PE: Record<string, number> = {
   '宽基': 15,
 };
 
-/** 估值带 */
-export type ValuationBand = 'deepUndervalue' | 'fair' | 'overvalue' | 'severeOvervalue';
+/** 估值带（基于 现价 vs 合理价值） */
+export type ValuationBand = 'deepUndervalue' | 'undervalue' | 'fair' | 'overvalue';
 
 /**
- * 判断股票估值状态
+ * 判断股票估值状态（基于 现价/合理价值 比率）
  */
-export function judgeStockValuation(currentPe: number, basePe: number): ValuationBand {
-  const ratio = currentPe / basePe;
-  if (ratio <= 0.6) return 'deepUndervalue';
-  if (ratio <= 1.2) return 'fair';
-  if (ratio <= 1.5) return 'overvalue';
-  return 'severeOvervalue';
+export function judgeStockValuation(currentPrice: number, fairValue: number): ValuationBand {
+  if (fairValue <= 0) return 'fair';
+  const ratio = currentPrice / fairValue;
+  if (ratio < 0.7) return 'deepUndervalue';
+  if (ratio < 0.9) return 'undervalue';
+  if (ratio <= 1.1) return 'fair';
+  return 'overvalue';
 }
 
 export function getValuationLabel(band: ValuationBand): string {
   switch (band) {
     case 'deepUndervalue': return '深度低估';
+    case 'undervalue': return '明显低估';
     case 'fair': return '估值合理';
-    case 'overvalue': return '偏高估';
-    case 'severeOvervalue': return '严重高估';
+    case 'overvalue': return '估值偏高';
     default: return 'unknown';
   }
 }
 
 export function getValuationLabelShort(band: ValuationBand): string {
   switch (band) {
-    case 'deepUndervalue': return '低估';
+    case 'deepUndervalue': return '深度低估';
+    case 'undervalue': return '明显低估';
     case 'fair': return '合理';
     case 'overvalue': return '偏高';
-    case 'severeOvervalue': return '高估';
     default: return '-';
   }
 }
@@ -1272,10 +1270,10 @@ export function getStockBasePe(asset: Asset): number {
 }
 
 /**
- * 计算股票内在价值 = yearDivPerShare × basePe
+ * 计算合理价值 = EPS × basePe
  */
-export function getStockIntrinsicValue(yearDivPerShare: number, basePe: number): number {
-  return Math.round(yearDivPerShare * basePe);
+export function calcFairValue(eps: number, basePe: number): number {
+  return Math.round(eps * basePe * 100) / 100;
 }
 
 /**
@@ -1288,16 +1286,25 @@ export function calcCurrentStockPrice(
   marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
   sectorMultiplier: Record<string, number> = {}
 ): number {
-  const basePe = getStockBasePe(asset);
-  const currentPe = asset.currentPe ?? basePe;
-  const intrinsicPrice = asset.intrinsicPrice ?? 0;
-  if (intrinsicPrice > 0 && basePe > 0) {
-    const pePrice = (intrinsicPrice * currentPe) / basePe;
-    const marketMult = marketMultiplier[asset.type] ?? 1;
-    const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
-    return Math.round(pePrice * marketMult * sectorMult);
+  const singlePrice = asset.singlePrice ?? 0;
+  if (singlePrice <= 0) return 0;
+
+  // 仅股票/海外/衍生品走 PE 估值（彻底移除 marketMultiplier × sectorMultiplier）
+  // REIT/债券/商品等非权益类：PE 不适用，只用 basePrice × 乘数
+  const isEquity = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
+  if (isEquity) {
+    const basePe = getStockBasePe(asset);
+    const currentPe = asset.currentPe ?? basePe;
+    const intrinsicPrice = asset.intrinsicPrice ?? 0;
+    if (intrinsicPrice > 0 && basePe > 0) {
+      const pePrice = (intrinsicPrice * currentPe) / basePe;
+      return Math.round(pePrice * 100) / 100;
+    }
   }
-  return asset.singlePrice ?? 0;
+  // 非权益类：basePrice × 乘数，保留2位小数
+  const marketMult = marketMultiplier[asset.type] ?? 1;
+  const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+  return Math.round(singlePrice * marketMult * sectorMult * 100) / 100;
 }
 
 /** 获取证券当前PB（市净率），取自 metadata.pb */
@@ -1305,20 +1312,23 @@ export function getStockCurrentPb(asset: Asset): number | undefined {
   return asset.metadata?.pb;
 }
 
-/** 获取证券买入时的每份单价（回退到 singlePrice） */
+/** 获取证券买入时的每份单价（从 cost/shares 反算） */
 export function getStockBuyPrice(asset: Asset): number {
-  return asset.originalSinglePrice ?? asset.singlePrice ?? 0;
+  const totalShares = (asset.shareHand ?? 0) * STOCK_LOT_SIZE;
+  if (totalShares > 0) return (asset.cost ?? 0) / totalShares;
+  return asset.singlePrice ?? 0;
 }
 
-/** 计算证券价格涨跌百分比（现价 vs 买入价） */
+/** 计算证券价格涨跌百分比（现价 vs 持仓成本） */
 export function getStockPriceChange(
   asset: Asset,
   marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
   sectorMultiplier: Record<string, number> = {}
 ): number {
-  const buyPrice = getStockBuyPrice(asset);
-  if (buyPrice <= 0) return 0;
   const curPrice = calcCurrentStockPrice(asset, marketMultiplier, sectorMultiplier);
+  const totalShares = (asset.shareHand ?? 0) * STOCK_LOT_SIZE;
+  const buyPrice = totalShares > 0 ? (asset.cost ?? 0) / totalShares : 0;
+  if (buyPrice <= 0) return 0;
   return Math.round(((curPrice - buyPrice) / buyPrice) * 10000) / 100;
 }
 
@@ -1358,23 +1368,58 @@ export function calcCurrentStockMonthlyDividend(asset: Asset): number {
 }
 
 /**
- * 对股票 currentPe 做调整（市场事件用）
+ * PE 变动后同步更新 PB 和 dividendYield
+ * PB 与现价同比例浮动：newPb = currentPb × (newPrice / oldPrice)
+ * 股息率 = yearDivPerShare / newPrice（年分红固定，价格涨则股息率降）
+ */
+export function syncPbAndDivYieldOnPeChange(asset: Asset, newPe: number): Asset {
+  const basePe = getStockBasePe(asset);
+  const oldPe = asset.currentPe ?? basePe;
+  if (oldPe === newPe) return { ...asset, currentPe: newPe };
+
+  const intrinsicPrice = asset.intrinsicPrice ?? 0;
+  if (intrinsicPrice <= 0) return { ...asset, currentPe: newPe };
+
+  const newPrice = (intrinsicPrice * newPe) / basePe;
+  const oldPrice = (intrinsicPrice * oldPe) / basePe;
+
+  let modified: Asset = { ...asset, currentPe: newPe };
+
+  // PB 同步
+  const currentPb = asset.metadata?.pb;
+  if (currentPb != null && oldPrice > 0) {
+    const newPb = Math.round((currentPb * newPrice / oldPrice) * 100) / 100;
+    modified = { ...modified, metadata: { ...(modified.metadata ?? {}), pb: newPb } };
+  }
+
+  // dividendYield 同步
+  const yearDiv = asset.yearDivPerShare ?? 0;
+  if (yearDiv > 0 && newPrice > 0) {
+    const newDivYield = Math.round((yearDiv / newPrice) * 10000) / 10000;
+    modified = { ...modified, metadata: { ...(modified.metadata ?? {}), dividendYield: newDivYield } };
+  }
+
+  return modified;
+}
+
+/**
+ * 对股票 currentPe 做调整（市场事件用），同步刷新 PB / dividendYield
  */
 export function updateStockPeByEvent(asset: Asset, peDelta: number): Asset {
   const basePe = getStockBasePe(asset);
   const oldCurrentPe = asset.currentPe ?? basePe;
   const newCurrentPe = Math.max(0.5, Math.round((oldCurrentPe + peDelta) * 100) / 100);
-  return { ...asset, currentPe: newCurrentPe };
+  return syncPbAndDivYieldOnPeChange(asset, newCurrentPe);
 }
 
 /**
- * 对股票 currentPe 做百分比调整
+ * 对股票 currentPe 做百分比调整，同步刷新 PB / dividendYield
  */
 export function updateStockPeByPercent(asset: Asset, pct: number): Asset {
   const basePe = getStockBasePe(asset);
   const oldCurrentPe = asset.currentPe ?? basePe;
   const newCurrentPe = Math.max(0.5, Math.round(oldCurrentPe * (1 + pct) * 100) / 100);
-  return { ...asset, currentPe: newCurrentPe };
+  return syncPbAndDivYieldOnPeChange(asset, newCurrentPe);
 }
 
 /**

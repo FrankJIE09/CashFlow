@@ -519,7 +519,7 @@ export const MARKET_CARDS: MarketCard[] = [
       assetImpacts: {
         realEstate: { priceChange: 1.08 },
         commodity: { priceChange: 1.15 },
-        stock: { cashFlowChange: 1.05 },
+        stock: { priceChange: 1.05, cashFlowChange: 1.05 },
         bond: { priceChange: 0.92 },
       },
     },

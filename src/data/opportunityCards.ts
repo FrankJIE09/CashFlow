@@ -1,23 +1,5 @@
 import type { OpportunityCard } from '../types/game';
-import { SECTOR_BASE_PE, getStockIntrinsicValue } from '../utils/financial';
-
-/**
- * 【新增】v3.6 随机生成初始 currentPe
- * 30% 深度低估 (0.6×basePe), 40% 合理, 30% 严重高估 (1.5×basePe)
- */
-function randomCurrentPe(basePe: number): number {
-  const roll = Math.random();
-  if (roll < 0.3) {
-    // deep undervalue
-    return Math.round(basePe * (0.4 + Math.random() * 0.2) * 10) / 10;
-  } else if (roll < 0.7) {
-    // fair
-    return Math.round(basePe * (0.8 + Math.random() * 0.4) * 10) / 10;
-  } else {
-    // severe overvalue
-    return Math.round(basePe * (1.5 + Math.random() * 0.5) * 10) / 10;
-  }
-}
+import { SECTOR_BASE_PE } from '../utils/financial';
 
 function stock(
   id: string,
@@ -34,12 +16,20 @@ function stock(
   extra?: Partial<OpportunityCard>
 ): OpportunityCard {
   const shareHand = Math.max(1, Math.round(shares / 100));
-  const yearDivPerShare = price * dividendYield;
-  const marketValue = shareHand * 100 * price;
-  const monthlyDividend = Math.round((shareHand * 100 * yearDivPerShare) / 12);
   const basePe = SECTOR_BASE_PE[sector] ?? 15;
-  const currentPe = randomCurrentPe(basePe);
-  const intrinsicPrice = getStockIntrinsicValue(yearDivPerShare, basePe);
+  const currentPe = Math.round(peTTM * 10) / 10;
+  // EPS = price / peTTM
+  const eps = price / peTTM;
+  // 合理价值 = EPS × basePe（保留2位小数）
+  const fairValue = Math.round(eps * basePe * 100) / 100;
+  // 现价 = 合理价值 × currentPe / basePe（应约等于 price 参数）
+  const currentPrice = Math.round(fairValue * currentPe / basePe * 100) / 100;
+  // 年化每股股息 = 合理价值 × 股息率（股息基于合理价值，不受市价短期波动影响）
+  const yearDivPerShare = fairValue * dividendYield;
+  // 总市值 = 现价 × 总股数
+  const marketValue = shareHand * 100 * currentPrice;
+  // 月股息 = 合理价值 × 股息率 ÷ 12 × 总股数，取整
+  const monthlyDividend = Math.round((shareHand * 100 * yearDivPerShare) / 12);
   return {
     id,
     title: `${name} (${ticker})`,
@@ -57,13 +47,11 @@ function stock(
       marketValue,
       shares: shareHand * 100,
       shareHand,
-      singlePrice: price,
+      singlePrice: currentPrice,     // 现价（唯一成交价格）
       yearDivPerShare,
       basePe,
       currentPe,
-      intrinsicPrice,
-      originalSinglePrice: price,
-      buyPe: currentPe,
+      intrinsicPrice: fairValue,     // 合理价值（仅估值参考）
       metadata: {
         sector,
         ticker,
@@ -116,8 +104,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 0,
       basePe: 25,
       currentPe: 25,
-      originalSinglePrice: 5.2,
-      buyPe: 25,
       intrinsicPrice: 5.2,
       metadata: {
         sector: '贵金属',
@@ -154,8 +140,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 4.2,
       basePe: 8,
       currentPe: 8,
-      originalSinglePrice: 102,
-      buyPe: 8,
       intrinsicPrice: 102,
       metadata: {
         sector: '利率债',
@@ -192,6 +176,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       shareHand: 50,
       singlePrice: 1.7,
       yearDivPerShare: 1.7 * 0.055,
+      basePe: 6,
+      currentPe: 6,
+      intrinsicPrice: 1.7,
       metadata: {
         sector: '金融',
         ticker: '515080',
@@ -202,6 +189,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
         subCategory: '红利ETF',
         trackingIndex: '中证红利',
         dividendYield: 0.055,
+        peTTM: 6,
         managementFee: 0.005,
         minInvestment: 100,
       },
@@ -226,6 +214,9 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       shareHand: 100,
       singlePrice: 0.95,
       yearDivPerShare: 0,
+      basePe: 45,
+      currentPe: 45,
+      intrinsicPrice: 0.95,
       metadata: {
         sector: '科技',
         ticker: '588000',
@@ -235,6 +226,7 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
         riskLevel: 'high',
         subCategory: '宽基ETF',
         trackingIndex: '科创50',
+        peTTM: 45,
         managementFee: 0.005,
         minInvestment: 100,
       },
@@ -261,8 +253,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 3.0,
       basePe: 8,
       currentPe: 8,
-      originalSinglePrice: 100,
-      buyPe: 8,
       intrinsicPrice: 100,
       metadata: {
         sector: '利率债',
@@ -298,8 +288,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 3.84,
       basePe: 10,
       currentPe: 10,
-      originalSinglePrice: 105,
-      buyPe: 10,
       intrinsicPrice: 105,
       metadata: {
         sector: '信用债',
@@ -338,8 +326,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 0,
       basePe: 20,
       currentPe: 20,
-      originalSinglePrice: 1.2,
-      buyPe: 20,
       intrinsicPrice: 1.2,
       metadata: {
         sector: '有色金属',
@@ -376,8 +362,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 0,
       basePe: 12,
       currentPe: 12,
-      originalSinglePrice: 1.04,
-      buyPe: 12,
       intrinsicPrice: 1.04,
       metadata: {
         sector: '能源',
@@ -414,8 +398,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 0,
       basePe: 15,
       currentPe: 15,
-      originalSinglePrice: 1.9,
-      buyPe: 15,
       intrinsicPrice: 1.9,
       metadata: {
         sector: '农产品',
@@ -452,8 +434,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 7.44,
       basePe: 15,
       currentPe: 15,
-      originalSinglePrice: 110,
-      buyPe: 15,
       intrinsicPrice: 110,
       metadata: {
         sector: '新能源',
@@ -490,8 +470,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 7.8,
       basePe: 18,
       currentPe: 18,
-      originalSinglePrice: 120,
-      buyPe: 18,
       intrinsicPrice: 120,
       metadata: {
         sector: '物流地产',
@@ -528,8 +506,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 9.6,
       basePe: 14,
       currentPe: 14,
-      originalSinglePrice: 150,
-      buyPe: 14,
       intrinsicPrice: 150,
       metadata: {
         sector: '商业地产',
@@ -719,8 +695,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 1.08,
       basePe: 10,
       currentPe: 10,
-      originalSinglePrice: 108,
-      buyPe: 10,
       intrinsicPrice: 108,
       metadata: {
         sector: '先进制造',
@@ -891,8 +865,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 3.0,
       basePe: 25,
       currentPe: 25,
-      originalSinglePrice: 150,
-      buyPe: 25,
       intrinsicPrice: 150,
       metadata: {
         sector: '科技',
@@ -930,8 +902,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 3.6,
       basePe: 25,
       currentPe: 25,
-      originalSinglePrice: 180,
-      buyPe: 25,
       intrinsicPrice: 180,
       metadata: {
         sector: '宽基',
@@ -972,8 +942,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 33.6,
       basePe: 18,
       currentPe: 18,
-      originalSinglePrice: 500,
-      buyPe: 18,
       intrinsicPrice: 500,
       metadata: {
         sector: '物流地产',
@@ -1009,8 +977,6 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
       yearDivPerShare: 19.2,
       basePe: 15,
       currentPe: 15,
-      originalSinglePrice: 300,
-      buyPe: 15,
       intrinsicPrice: 300,
       metadata: {
         sector: 'REITs',

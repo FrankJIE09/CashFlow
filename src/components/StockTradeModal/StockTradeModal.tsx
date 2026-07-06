@@ -9,7 +9,6 @@ import {
   getStockBasePe,
   getValuationLabel,
   calcStockProfit,
-  getStockIntrinsicValue,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
@@ -67,13 +66,14 @@ export function StockTradeModal({ onClose }: StockTradeModalProps) {
                 const currentPrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
                 const basePe = getStockBasePe(asset);
                 const currentPe = asset.currentPe ?? basePe;
-                const valuation = judgeStockValuation(currentPe, basePe);
                 const totalLots = asset.shareHand ?? 0;
                 const marketValue = calcCurrentStockMarketValue(asset, state.marketMultiplier, state.sectorMultiplier);
-                const intrinsicPrice = asset.intrinsicPrice ?? getStockIntrinsicValue(asset.yearDivPerShare ?? 0, basePe);
-                const buyPrice = asset.originalSinglePrice ?? asset.singlePrice ?? 0;
+                const intrinsicPrice = asset.intrinsicPrice ?? 0;
+                const buyPrice = totalLots > 0 ? (asset.cost ?? 0) / (totalLots * 100) : 0;
+                const valuation = judgeStockValuation(currentPrice, intrinsicPrice);
                 const profitPerShare = currentPrice - buyPrice;
                 const profitPct = buyPrice > 0 ? ((profitPerShare / buyPrice) * 100).toFixed(1) : '0';
+                const isEquityPE = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
 
                 const sellQty = sellInputs[asset.id] ?? 0;
                 const previewProceeds = sellQty > 0 ? calcStockProfit(asset, sellQty, state.marketMultiplier, state.sectorMultiplier) : 0;
@@ -88,14 +88,16 @@ export function StockTradeModal({ onClose }: StockTradeModalProps) {
                       <span className={styles.sectorTag}>{asset.metadata?.sector}</span>
                     </div>
 
-                    {/* v3.6 PE 估值显示 */}
-                    <div className={styles.valuationRow}>
-                      <span className={styles.peLabel}>行业中枢PE {basePe.toFixed(1)}</span>
-                      <span className={styles.peLabel}>当前动态PE {currentPe.toFixed(1)}</span>
-                      <span className={`${styles.valuationTag} ${styles[valuation]}`}>
-                        {getValuationLabel(valuation)}
-                      </span>
-                    </div>
+                    {/* v3.6 PE 估值显示（仅限股票类资产） */}
+                    {isEquityPE && (
+                      <div className={styles.valuationRow}>
+                        <span className={styles.peLabel}>行业中枢PE {basePe.toFixed(1)}</span>
+                        <span className={styles.peLabel}>当前动态PE {currentPe.toFixed(1)}</span>
+                        <span className={`${styles.valuationTag} ${styles[valuation]}`}>
+                          {getValuationLabel(valuation)}
+                        </span>
+                      </div>
+                    )}
 
                     {/* 价格信息 */}
                     <div className={styles.priceRow}>
