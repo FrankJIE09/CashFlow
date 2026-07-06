@@ -9,7 +9,6 @@ import {
   canPurchaseOpportunity,
   getAssetPriceMultiplier,
   getAssetTypeLabel,
-  getNetWorth,
   getOpportunityAsset,
   isStockLotAsset,
   stockLotBuyCost,
@@ -32,7 +31,7 @@ export function CardModal() {
   const actions = useGameActions();
   const { play } = useSound();
   const hasPlayedRef = useRef(false);
-  const [stockLots, setStockLots] = useState(1);
+  const [stockLots, setStockLots] = useState<number | ''>(1);
 
   useEffect(() => {
     if (state.phase === 'CARD_DECISION' && !hasPlayedRef.current) {
@@ -247,14 +246,42 @@ export function CardModal() {
     );
   }
 
-  if (space.type === 'marriage') {
+  if (space.type === 'family') {
+    if (player.marriageStatus === 'ineligible') {
+      return null;
+    }
+
     if (player.marriageStatus === 'married') {
+      // 已婚 → 育儿/怀孕事件
+      const medical = pregnancyMedicalCost(player.cityId);
+      const atLimit = player.children >= 3 && !player.hasPregnancy;
       const h = player.marriageHappiness;
+
+      if (player.hasPregnancy) {
+        return (
+          <div className={styles.overlay}>
+            <div className={styles.modal}>
+              <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
+              <h2 className={styles.title}>🤰 孕期管理</h2>
+              <p className={styles.description}>已怀孕 {player.pregnancyMonths ?? 0}/9 月，请选择后续方向：</p>
+              <div className={styles.actions}>
+                <button className={styles.primaryButton} onClick={() => actions.choosePregnancyPath('postpone')}>
+                  继续孕期（推迟生育决策）
+                </button>
+                <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('dink')}>
+                  转 DINK（幸福度惩罚，离婚风险↑）
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       if (h >= 70) {
         return (
           <div className={styles.overlay}>
             <div className={styles.modal}>
-              <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>婚姻状态 · 甜蜜</div>
+              <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>家庭状态 · 甜蜜</div>
               <h2 className={styles.title}>💑 婚姻甜蜜期</h2>
               <p className={styles.description}>幸福度 {h}，感情稳定，工资 +10% 加成生效中。</p>
               <div className={styles.actions}>
@@ -270,7 +297,7 @@ export function CardModal() {
         return (
           <div className={styles.overlay}>
             <div className={styles.modal}>
-              <div className={styles.cardType} style={{ backgroundColor: '#ffd9a0' }}>婚姻状态 · 平淡</div>
+              <div className={styles.cardType} style={{ backgroundColor: '#ffd9a0' }}>家庭状态 · 平淡</div>
               <h2 className={styles.title}>💑 平淡日常</h2>
               <p className={styles.description}>幸福度 {h}，需要继续经营家庭关系。</p>
               <div className={styles.actions}>
@@ -286,9 +313,10 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
-            <div className={styles.cardType} style={{ backgroundColor: '#ff6b6b' }}>婚姻状态 · 危机</div>
+            <div className={styles.cardType} style={{ backgroundColor: '#ff6b6b' }}>家庭状态 · 危机</div>
             <h2 className={styles.title}>💔 婚姻危机</h2>
             <p className={styles.description}>幸福度仅 {h}，关系亮红灯。可投资婚姻咨询（{formatCurrency(counselingCost)}）或选择忽视。</p>
+            <p className={styles.description}>此外，你们也可以考虑生育计划：</p>
             <div className={styles.actions}>
               <button
                 className={styles.primaryButton}
@@ -301,11 +329,29 @@ export function CardModal() {
                 忽视（幸福度 -5，可能离婚）
               </button>
             </div>
+            <hr className={styles.divider} />
+            <p className={styles.description}>生育计划（已婚可选）：</p>
+            <div className={styles.actions}>
+              <button
+                className={styles.primaryButton}
+                onClick={() => actions.choosePregnancyPath('plan')}
+                disabled={atLimit}
+              >
+                计划怀孕（月医疗 +{formatCurrency(medical)}）
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('dink')}>
+                DINK（幸福度惩罚）
+              </button>
+              <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('postpone')}>
+                推迟
+              </button>
+            </div>
           </div>
         </div>
       );
     }
 
+    // 单身（single）→ 结婚；离异（divorced）→ 再婚
     const isRemarriage = player.marriageStatus === 'divorced';
     const cost = isRemarriage ? remarriageCost(player.cityId) : weddingCost(player.cityId);
     const canMarry = player.cash >= cost || player.cash + 50000 >= cost;
@@ -314,11 +360,11 @@ export function CardModal() {
       <div className={styles.overlay}>
         <div className={styles.modal}>
           <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>人生选择</div>
-          <h2 className={styles.title}>{isRemarriage ? '💍 再婚机会' : '💍 婚恋格'}</h2>
+          <h2 className={styles.title}>{isRemarriage ? '💍 再婚机会' : '💍 家庭格'}</h2>
           <p className={styles.description}>
             {isRemarriage
               ? '你有一次再婚机会。再婚后再离婚将永久失去婚姻资格，且财产分割更严（60%）。'
-              : '你来到了「婚恋格」。是否步入婚姻？'}
+              : '你来到了「家庭格」。是否考虑步入婚姻？'}
           </p>
           <p className={styles.description}>
             {isRemarriage ? '再婚' : '结婚'}费用 {formatCurrency(cost)}，幸福度初始 {happiness}，伴侣月薪加成，幸福≥50 时工资 +10%。
@@ -376,43 +422,7 @@ export function CardModal() {
     );
   }
 
-  if (space.type === 'baby') {
-    if (player.marriageStatus !== 'married') {
-      return null;
-    }
-    const medical = pregnancyMedicalCost(player.cityId);
-    const atLimit = player.children >= 3 && !player.hasPregnancy;
-    return (
-      <div className={styles.overlay}>
-        <div className={styles.modal}>
-          <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
-          <h2 className={styles.title}>👶 生育计划（已婚）</h2>
-          <p className={styles.description}>请选择你们的生育路径：</p>
-          <div className={styles.actions}>
-            <button
-              className={styles.primaryButton}
-              onClick={() => actions.choosePregnancyPath('plan')}
-              disabled={atLimit || player.hasPregnancy}
-            >
-              计划怀孕（月医疗 +{formatCurrency(medical)}）
-            </button>
-            <button
-              className={styles.secondaryButton}
-              onClick={() => actions.choosePregnancyPath('dink')}
-            >
-              DINK（幸福度 -12/月，离婚风险↑）
-            </button>
-            <button
-              className={styles.secondaryButton}
-              onClick={() => actions.choosePregnancyPath('postpone')}
-            >
-              推迟（无变化）
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // 生育决策已合并至 family 格中（见上方 space.type === 'family' 分支）
 
   if (!card) return null;
 
@@ -651,12 +661,14 @@ export function CardModal() {
       ? Math.round((lots * 100 * (asset.yearDivPerShare ?? 0)) / 12)
       : asset.cashFlow;
     const purchaseGate = canPurchaseOpportunity(player, card, state.marketMultiplier, state.sectorMultiplier);
+    const stockLotsValid = stockLots !== '';
+    const stockLotsNum = stockLotsValid ? Math.max(1, Math.floor(stockLots as number)) : 1;
     const totalBuyCost = isStock
-      ? (stockLots !== '' ? stockLotBuyCost(lots, asset.singlePrice ?? 0) + (card.dueDiligenceCost ?? 0) : 0)
+      ? (stockLotsValid ? stockLotBuyCost(stockLotsNum, asset.singlePrice ?? 0) + (card.dueDiligenceCost ?? 0) : 0)
       : calculateBuyCost(asset) + (card.dueDiligenceCost ?? 0);
-    const affordable = isStock ? (stockLots !== '' && player.cash >= totalBuyCost) : player.cash >= totalBuyCost;
+    const affordable = isStock ? (stockLotsValid && player.cash >= totalBuyCost) : player.cash >= totalBuyCost;
     const shortfall = totalBuyCost - player.cash;
-    const canLoan = shortfall > 0 && purchaseGate.allowed;
+    const canLoan = !isStock && shortfall > 0 && purchaseGate.allowed;
 
     return (
       <div className={styles.overlay}>
@@ -722,7 +734,7 @@ export function CardModal() {
                 const currentPe = asset.currentPe ?? basePe;
                 const valuation = judgeStockValuation(currentPe, basePe);
                 const hintLabel = getValuationLabel(valuation);
-                const price = calcCurrentStockPrice(asset);
+                const price = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
                 return (
                   <span>
                     当前PE {currentPe.toFixed(1)}，行业中枢PE {basePe.toFixed(1)}，标的{hintLabel}
@@ -758,7 +770,7 @@ export function CardModal() {
             {isStock && (
               <div className={styles.assetRow}>
                 <span>市价</span>
-                <span>{formatCurrency(calcCurrentStockPrice(asset))}/份</span>
+                <span>{formatCurrency(calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier))}/份</span>
               </div>
             )}
             <div className={styles.assetRow}>
@@ -814,10 +826,10 @@ export function CardModal() {
               disabled={
                 !purchaseGate.allowed ||
                 (!affordable && !canLoan) ||
-                (isStock && stockLots === '')
+                (isStock && !stockLotsValid)
               }
             >
-              {affordable ? '买入' : purchaseGate.allowed ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}
+              {affordable ? '买入' : canLoan ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}
             </button>
             <button className={styles.secondaryButton} onClick={actions.declineCard}>
               放弃

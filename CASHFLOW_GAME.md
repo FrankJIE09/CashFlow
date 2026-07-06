@@ -27,6 +27,7 @@
 16. [【新增】自动化测试 Agent 系统](#十六新增自动化测试-agent-系统)
 17. [【新增】v3.5 破产缓冲 · 失业婚姻 · 资产变卖](#十七新增v35-破产缓冲--失业婚姻--资产变卖)
 18. [【新增】v3.7 身份校验 · 再婚梯度 · 资产折价 · 通胀对冲 · 保险联动 · 十五项修复](#十八新增v37-身份校验--再婚梯度--资产折价--通胀对冲--保险联动--十五项修复)
+18. [【新增】v3.7 身份校验 · 再婚梯度 · 资产折价 · 通胀对冲 · 保险联动 · 十五项修复](#十八新增v37-身份校验--再婚梯度--资产折价--通胀对冲--保险联动--十五项修复)
 
 ---
 
@@ -170,7 +171,7 @@ export type OpportunityKind = 'smallDeal' | 'bigDeal';
 
 export type SpaceType =
   | 'opportunity' | 'market' | 'doodad'
-  | 'charity' | 'baby' | 'marriage' | 'settlement'  // 【新增】v3.1 marriage
+  | 'charity' | 'family' | 'settlement'  // 【v3.9】'baby' 与 'marriage' 合并为 'family'
   | 'promotion';  // 【新增】v3.2 升迁格
 
 /** 【新增】v3.1 婚恋状态 */
@@ -773,18 +774,27 @@ case 'CHOOSE_BABY': {
 
 捐款月收入的 10%，获得 3 回合双骰子权利。
 
-#### 5.6.5 【新增】v3.1 婚恋格（marriage）— v3.4 再婚扩展
+#### 5.6.5 【v3.9】综合家庭格（family）— 婚恋与生育合并
 
-棋盘格 10 为「婚恋格」（`type: 'marriage'`）。
+棋盘格 10 为「家庭格」（`type: 'family'`），合并了原婚恋格和生育格的功能。原生育格（id 14）已替换为小生意机会。
 
-**单身（single）**：首次结婚
-1. 移动到婚恋格 → `CARD_DECISION`
-2. 选择结婚 → `CHOOSE_MARRIAGE { marry: true }` → `weddingCost(cityId)`，幸福度 60，伴侣月薪，家庭开销 +`marriageOverhead`
+**根据婚姻状态分支：**
 
-**离异（divorced）**：允许一次再婚
-1. 再婚费用 = 初婚 60–80%（`remarriageCost`）
-2. 幸福度初始 **50**（非 60），同样恢复 10% 工资加成
-3. 追踪 `marriageCount` / `divorceCount`
+- **单身（single）** → 结婚事件（同原婚恋格）
+  1. 移动到家庭格 → `CARD_DECISION`
+  2. 选择结婚 → `CHOOSE_MARRIAGE { marry: true }` → `weddingCost(cityId)`，幸福度 60，伴侣月薪，家庭开销 +`marriageOverhead`
+
+- **已婚（married）** → 生育/育儿事件（同原生育格）
+  1. 移动到家庭格 → `CARD_DECISION`
+  2. 选择生育计划 → `CHOOSE_PREGNANCY_PATH { path: 'plan'|'dink'|'postpone' }`
+  3. 也可触发婚姻幸福度事件（`RESOLVE_MARRIAGE_GRID`）
+
+- **离异（divorced）** → 允许一次再婚
+  1. 再婚费用 = 初婚 60–80%（`remarriageCost`）
+  2. 幸福度初始 **50**（非 60），同样恢复 10% 工资加成
+  3. 追踪 `marriageCount` / `divorceCount`
+
+- **永久失去资格（ineligible）** → 跳过，无任何事件
 
 **再婚后再离约束（防刷 Buff）**
 - 财产分割 50% → **60%**，律师费 ×1.5
@@ -2009,7 +2019,7 @@ AssetType: 'stock' | 'bond' | 'commodity' | 'reit' | 'derivative'
          | 'overseas' | 'entity' | 'realEstate' | 'business' | 'intellectual'
 
 // 棋盘
-SpaceType: 'opportunity' | 'market' | 'doodad' | 'charity' | 'baby' | 'marriage' | 'settlement'  // 【新增】v3.1 marriage
+SpaceType: 'opportunity' | 'market' | 'doodad' | 'charity' | 'family' | 'settlement'  // 【v3.9】'baby' 与 'marriage' 合并为 'family'
          | 'promotion'  // 【新增】v3.2 升迁格
 
 // 【新增】v3.1 婚恋
@@ -2201,11 +2211,11 @@ testMaxRounds?: number;
 
 | 检测项 | 规则 | category | 默认阈值 |
 |--------|------|----------|----------|
-| 卡死 | `CARD_DECISION` 且 `currentCard === null`（非 baby/marriage/charity/promotion/退休） | `card_stuck` | > 3 次 |
+| 卡死 | `CARD_DECISION` 且 `currentCard === null`（非 family/charity/promotion/退休） | `card_stuck` | > 3 次 |
 | 死锁 | 同一 `phase` 连续 reducer 未切换 | `deadlock` | > 5 次 |
 | 骰子残留 | `MOVE_PLAYER` 后 `pendingDice !== null` | `state_machine` | 立即 |
 | 财务异常 | 现金越界、单次变动过大、子女/幸福度非法 | `financial` / `data_invalid` | 立即 |
-| 分支缺失 | 已婚落 baby 格未进 `CARD_DECISION`；单身落婚恋格；结算格未 `TURN_END` | `branch_missing` | 立即 |
+| 分支缺失 | 已婚落 family 格未进 `CARD_DECISION`；单身/离异落 family 格未进 `CARD_DECISION`；结算格未 `TURN_END` | `branch_missing` | 立即 |
 | 破产漏检 | `checkBankruptcy` 为 true 且未 `isBankrupt` | `bankruptcy` | 立即 |
 | 变卖漏检 | `needsLiquidation` 为 true 且未 `pendingLiquidation` | `bankruptcy` | 立即 |
 | 回合上限 | `round > testMaxRounds` | `state_machine` | warning |
@@ -2478,4 +2488,140 @@ export function shouldHalveUnemploymentPenalty(player, mult?, sector?): boolean;
 ---
 
 *文档版本：v3.5*  
+*最后更新：2026-07-04*
+
+## 十八、【新增】v3.7 身份校验 · 再婚梯度 · 资产折价 · 通胀对冲 · 保险联动 · 十五项修复
+
+> 本章覆盖 v3.7 的 15 项针对性修复与新增功能，涵盖家庭身份校验、职场拦截、婚姻惩罚梯度、年龄平衡经济、资产折价差异化、宏观通胀对冲、保险联动大额医疗等。
+
+### 18.1 【修正】家庭卡牌前置身份校验
+
+**修复**：`PAY_DOODAD` 新增前置拦截：
+
+```
+- 子女费用（择校/补习/留学等）：children===0 或 dink>0 → 跳过
+- 配偶失业卡：marriageStatus !== 'married' → 跳过
+- 流产事件：!hasPregnancy || !married → 跳过  
+```
+
+### 18.2 【修正】职场事件拦截
+
+| 场景 | 行为 |
+|------|------|
+| 退休玩家落在升迁格 | 跳过所有职场事件（仅被动收入） |
+| 失业玩家落在升迁格 | 只触发「再就业」事件 |
+| 在职玩家落在升迁格 | 晋升/跳槽/转型/裁员全事件池 |
+
+### 18.3 【新增】再婚梯度惩罚
+
+**限制**：最多再婚 2 次（共 3 次婚姻），第 3 次自动拒绝。
+
+| 再婚次序 | 费用比例 | 幸福度 | 备注 |
+|----------|---------|--------|------|
+| 初婚 | 100% | 60 | 正常婚礼 |
+| 第1次再婚 | 60% | 50 | 资产分割 60% |
+| 第2次再婚 | 70% | 40 | 资产分割 70% |
+| 第3次 | — | — | 自动拒绝 |
+
+### 18.4 【新增】年龄职场平衡
+
+| 年龄段 | 跳槽高薪额外加成 | 晋升培训费减免 |
+|--------|-----------------|--------------|
+| 30-45岁 | +10% 经验加成 | 20% 费用减免 |
+| 45岁以上 | 无加成 | 无减免 |
+
+### 18.5 【新增】丁克养老对冲
+
+**条件**：年龄 ≥ 45 且 dinkTurns ≥ 12 且 children === 0 且已婚
+
+**效果**：每月新增养老支出 calcDinkElderlyCareExpense（约 ¥2,000 × 城市乘数）
+
+### 18.6 【修正】资产变卖折价差异化
+
+| 资产类型 | 协商变卖 | 私自变卖 |
+|---------|---------|---------|
+| 住宅 (realEstate) | 70% 市价 | 50% 市价 |
+| 商铺/商业地产 (commercial) | 60% 市价 | 40% 市价 |
+
+### 18.7 【新增】通胀/通缩资产对冲
+
+新增 inflationEvent 类型市场卡（3 张）：
+
+| 卡名 | 通胀Delta | 现金效果 | 资产效果 |
+|------|-----------|---------|---------|
+| 通胀飙升 | +5% | 现金贬值 5% | 房产/商品涨 8-15%，债券跌 8% |
+| 通缩螺旋 | -5% | 现金升值 5% | 债券涨 8%，股票/房产跌 8-12% |
+| 温和通胀 | +2% | 现金贬值 2% | 房产涨 5%，实体涨 3%，债券跌 3% |
+
+### 18.8 【新增】保险联动大病支出
+
+新增 6 张 doodad 卡：医疗保险、牙科保险、人寿保险、自身重大疾病、父母大病（保险覆盖）、交通事故（医疗事件标记）。保险扣减流程：rawCost → 扣除免赔额 → 保险覆盖率 → 自付。
+
+### 18.9 【修正】状态机卡死修复
+
+DECLINE_CARD 增加清理：promotionOffer, careerEvent, pendingSettlement 全部置 null。所有决策路径确保进入 TURN_END 并清空 currentCard。
+
+### 18.10 【新增】自动测试扩充
+
+testValidators.ts 新增检测：子女费用对无子女、晋升对退休/失业、配偶失业对单身、高负债幸福惩罚缺失。
+
+### 18.11 【修正】股票UI零股提示
+
+StockTradeModal 底部增加提示：「⚠️ 不足100股（零股）仅支持一次性全部清仓，无法分批卖出。」
+
+### 18.12 【新增】购房限购
+
+| 婚姻状态 | 住宅持有上限 |
+|---------|------------|
+| 单身 | 最多 2 套 |
+| 已婚 | 不限制 |
+
+BUY_ASSET 中增加 canBuyResidentialProperty 检查。商铺不受此限。
+
+### 18.13 【新增】PE均值回归市场卡
+
+| 卡名 | 效果 |
+|------|------|
+| 高PE均值回归 | 所有股票 currentPe 回落 30% |
+| 低PE均值修复 | 所有股票 currentPe 反弹 40% |
+
+### 18.14 【新增】每月负债幸福扣减
+
+processMonthlyLifeEvents 每月结算：总负债 > 3×年收入 → 幸福度 -8/月。
+
+### 18.15 【修正】退休全局屏蔽职场
+
+canReceiveCareerEvent 和 rollCareerEvent 顶部增加 isRetired 检查。退休玩家不会触发任何职场事件。
+
+### 18.16 新增字段
+
+Player: marriageAgeMonths, remarriageCount, insurances, dinkElderlyCareExpense, highDebtHappinessPenalty
+MarketEffectType: 'inflationEvent' | 'insuranceEvent'
+MarketEffect: inflationDelta?, insuranceCoverage?
+
+### 18.17 参数速查（v3.7）
+
+| 参数 | 值 |
+|------|-----|
+| 单身住宅上限 | 2 套 |
+| 再婚最大次数 | 2 次 |
+| 初婚幸福度 | 60 |
+| 1次再婚幸福度 | 50 |
+| 2次再婚幸福度 | 40 |
+| 30-45岁跳槽加成 | +10% |
+| 30-45岁培训减免 | ×0.8 |
+| DINK养老触发年龄 | ≥45岁 |
+| DINK养老月支出 | ¥2,000 × 城市乘数 |
+| 住宅协商变卖 | 70% |
+| 住宅私自变卖 | 50% |
+| 商铺协商变卖 | 60% |
+| 商铺私自变卖 | 40% |
+| 高负债阈值 | 总负债 > 3×年收入 |
+| 高负债月幸福惩罚 | -8 |
+| 保险覆盖率（医疗） | 70% |
+| 大病免赔额 | ¥2,000-3,000 |
+
+---
+
+*文档版本：v3.7*
 *最后更新：2026-07-04*

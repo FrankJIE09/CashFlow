@@ -12,7 +12,7 @@ export const STOCK_STAMP_TAX_RATE = 0.001;
 export const STOCK_COMMISSION_RATE = 0.0003;
 
 /** 证券类资产类型（可按手数买卖） */
-const SECURITY_ASSET_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'bond', 'reit', 'overseas', 'derivative']);
+const SECURITY_ASSET_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'bond', 'reit', 'overseas', 'derivative', 'commodity']);
 
 export function isStockLotAsset(asset: Asset): boolean {
   return (
@@ -79,17 +79,21 @@ export function buildStockLotAsset(
   const marketValue = lots * STOCK_LOT_SIZE * singlePrice;
   const monthlyDiv = Math.round((lots * STOCK_LOT_SIZE * yearDiv) / 12);
   const basePe = template.basePe ?? SECTOR_BASE_PE[template.metadata?.sector ?? ''] ?? 15;
-  const currentPe = template.currentPe ?? basePe;
-  const intrinsicPrice = getStockIntrinsicValue(yearDiv, basePe);
+  const rawCurrentPe = template.currentPe ?? basePe;
+  // 内在价值 = 买入价 ÷ 当前PE × 行业中枢PE，使得初始现价 = 买入价
+  const intrinsicPrice = basePe > 0 && rawCurrentPe > 0
+    ? Math.round(singlePrice / rawCurrentPe * basePe)
+    : singlePrice;
+  const effectivePe = rawCurrentPe;
   return {
     ...template,
     shareHand: lots,
     singlePrice,
     yearDivPerShare: yearDiv,
     originalSinglePrice: singlePrice,
-    buyPe: currentPe,
+    buyPe: effectivePe,
     basePe,
-    currentPe,
+    currentPe: effectivePe,
     intrinsicPrice,
     cost: marketValue,
     downPayment: marketValue,
@@ -1156,8 +1160,8 @@ export function canAffordStockLots(player: Player, asset: Asset, lots: number): 
 export function canPurchaseOpportunity(
   player: Player,
   card: OpportunityCard,
-  marketMultiplier: Record<AssetType, number>,
-  sectorMultiplier: Record<string, number> = {}
+  _marketMultiplier: Record<AssetType, number>,
+  _sectorMultiplier: Record<string, number> = {}
 ): { allowed: boolean; reason?: string } {
   if (card.minCashRequired && player.cash < card.minCashRequired) {
     return { allowed: false, reason: `需要现金 ≥ ${card.minCashRequired.toLocaleString()} 元` };
@@ -1276,14 +1280,22 @@ export function getStockIntrinsicValue(yearDivPerShare: number, basePe: number):
 
 /**
  * 计算股票当前实时价格 = intrinsicPrice × (currentPe / basePe)
+ * 再乘上市场乘数 × 行业乘数，然后四舍五入
  * 回退到 singlePrice
  */
-export function calcCurrentStockPrice(asset: Asset): number {
+export function calcCurrentStockPrice(
+  asset: Asset,
+  marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
+  sectorMultiplier: Record<string, number> = {}
+): number {
   const basePe = getStockBasePe(asset);
   const currentPe = asset.currentPe ?? basePe;
   const intrinsicPrice = asset.intrinsicPrice ?? 0;
   if (intrinsicPrice > 0 && basePe > 0) {
-    return Math.round((intrinsicPrice * currentPe) / basePe);
+    const pePrice = (intrinsicPrice * currentPe) / basePe;
+    const marketMult = marketMultiplier[asset.type] ?? 1;
+    const sectorMult = asset.metadata?.sector ? (sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+    return Math.round(pePrice * marketMult * sectorMult);
   }
   return asset.singlePrice ?? 0;
 }
@@ -1299,25 +1311,38 @@ export function getStockBuyPrice(asset: Asset): number {
 }
 
 /** 计算证券价格涨跌百分比（现价 vs 买入价） */
-export function getStockPriceChange(asset: Asset): number {
+export function getStockPriceChange(
+  asset: Asset,
+  marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
+  sectorMultiplier: Record<string, number> = {}
+): number {
   const buyPrice = getStockBuyPrice(asset);
   if (buyPrice <= 0) return 0;
-  const curPrice = calcCurrentStockPrice(asset);
+  const curPrice = calcCurrentStockPrice(asset, marketMultiplier, sectorMultiplier);
   return Math.round(((curPrice - buyPrice) / buyPrice) * 10000) / 100;
 }
 
-/** 获取证券当前每份实时价格（带乘数） */
-export function getStockCurrentPriceWithMultiplier(asset: Asset, priceMultiplier = 1): number {
-  const basePrice = calcCurrentStockPrice(asset);
+/** 获取证券当前每份实时价格（带额外乘数） */
+export function getStockCurrentPriceWithMultiplier(
+  asset: Asset,
+  priceMultiplier = 1,
+  marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
+  sectorMultiplier: Record<string, number> = {}
+): number {
+  const basePrice = calcCurrentStockPrice(asset, marketMultiplier, sectorMultiplier);
   return Math.round(basePrice * priceMultiplier);
 }
 
 /**
- * 计算股票当前实时市值（基于 PE 定价）
+ * 计算股票当前实时市值（基于 PE 定价，含市场/行业乘数）
  */
-export function calcCurrentStockMarketValue(asset: Asset): number {
+export function calcCurrentStockMarketValue(
+  asset: Asset,
+  marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
+  sectorMultiplier: Record<string, number> = {}
+): number {
   if (!isStockLotAsset(asset)) return asset.marketValue;
-  const price = calcCurrentStockPrice(asset);
+  const price = calcCurrentStockPrice(asset, marketMultiplier, sectorMultiplier);
   return Math.round((asset.shareHand ?? 0) * STOCK_LOT_SIZE * price);
 }
 
@@ -1355,9 +1380,15 @@ export function updateStockPeByPercent(asset: Asset, pct: number): Asset {
 /**
  * 计算手动卖出股票净收入
  * 佣金 0.03% + 印花税 0.1%（持有≥12月豁免）
+ * 含市场/行业乘数
  */
-export function calcStockProfit(asset: Asset, sellHand: number): number {
-  const price = calcCurrentStockPrice(asset);
+export function calcStockProfit(
+  asset: Asset,
+  sellHand: number,
+  marketMultiplier: Record<AssetType, number> = {} as Record<AssetType, number>,
+  sectorMultiplier: Record<string, number> = {}
+): number {
+  const price = calcCurrentStockPrice(asset, marketMultiplier, sectorMultiplier);
   const gross = Math.round(sellHand * STOCK_LOT_SIZE * price);
   const heldMonths = asset.heldMonths ?? 0;
   const stampTax = heldMonths >= 12 ? 0 : Math.round(gross * STOCK_STAMP_TAX_RATE);

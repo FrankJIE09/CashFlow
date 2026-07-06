@@ -25,6 +25,7 @@ import {
   isStockLotAsset,
   liquidateAssetConsent,
   liquidateAssetSecret,
+  getRentExpense,
   calcCurrentStockPrice,
   judgeStockValuation,
   getStockBasePe,
@@ -149,6 +150,17 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
               <span>子女支出（{player.children} × {formatCurrency(player.expenses.perChild)}）</span>
               <span>{formatCurrency(player.children * player.expenses.perChild)}</span>
             </div>
+            {(() => {
+              const rentVal = getRentExpense(player, player.cityId);
+              const hasOwn = player.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
+              if (hasOwn) return null;
+              return (
+                <div className={styles.row}>
+                  <span>租房支出</span>
+                  <span>{formatCurrency(rentVal)}</span>
+                </div>
+              );
+            })()}
             {propertyTax > 0 && (
               <div className={styles.row}>
                 <span>房产税（持有 2 套及以上房产）</span>
@@ -263,7 +275,7 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                     const basePe = getStockBasePe(asset);
                     const currentPe = asset.currentPe ?? basePe;
                     const valuation = judgeStockValuation(currentPe, basePe);
-                    const currentPrice = calcCurrentStockPrice(asset);
+                    const currentPrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
                     const buyPrice = asset.originalSinglePrice ?? asset.singlePrice ?? 0;
                     const profit = currentPrice - buyPrice;
                     const intrinsicPrice = asset.intrinsicPrice ?? 0;

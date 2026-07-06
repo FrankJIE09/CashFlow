@@ -139,28 +139,22 @@ export function useAutoTestAgent() {
           }
         } else if (space.type === 'charity') {
           actions.donateCharity(false);
-        } else if (space.type === 'marriage') {
-          if (player.marriageStatus === 'single' || player.marriageStatus === 'divorced') {
-            const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-            actions.chooseMarriage(cashFlow > 2000);
+        } else if (space.type === 'family') {
+          if (player.marriageStatus === 'ineligible') {
+            actions.declineCard();
           } else if (player.marriageStatus === 'married') {
-            if (player.marriageHappiness < 40) {
-              actions.resolveMarriageGrid(player.cash >= player.salary * 0.5);
+            // 已婚 → 育儿逻辑
+            if (player.hasPregnancy) {
+              actions.choosePregnancyPath('postpone');
+            } else if (player.children < 3 && getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier) > player.expenses.perChild * 4) {
+              actions.choosePregnancyPath('plan');
             } else {
-              actions.resolveMarriageGrid();
+              actions.choosePregnancyPath('postpone');
             }
           } else {
-            actions.declineCard();
-          }
-        } else if (space.type === 'baby') {
-          if (player.marriageStatus !== 'married') {
-            actions.declineCard();
-          } else if (player.hasPregnancy) {
-            actions.choosePregnancyPath('postpone');
-          } else if (player.children < 3 && getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier) > player.expenses.perChild * 4) {
-            actions.choosePregnancyPath('plan');
-          } else {
-            actions.choosePregnancyPath('postpone');
+            // 单身/离异 → 结婚/再婚逻辑
+            const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
+            actions.chooseMarriage(cashFlow > 2000);
           }
         } else if (card?.type === 'opportunity') {
           const recentLogs = state.logs.slice(-5).map((l) => l.message).join(' ');

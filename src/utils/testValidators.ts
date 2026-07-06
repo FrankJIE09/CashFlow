@@ -1,5 +1,5 @@
 import type { BugLogEntry, GameAction, GameState, Player } from '../types/game';
-import { checkBankruptcy, getMonthlyCashFlow, needsLiquidation, calcHighDebtHappinessPenalty } from './financial';
+import { checkBankruptcy, getMonthlyCashFlow, needsLiquidation, calcHighDebtHappinessPenalty, getTotalLiabilities } from './financial';
 import { generateId } from './random';
 
 const CHILDREN_LIMIT = 3;
@@ -51,7 +51,7 @@ function validateBranchCoverage(state: GameState, prevState: GameState, action: 
 
   if (
     action.type === 'MOVE_PLAYER' &&
-    space.type === 'baby' &&
+    space.type === 'family' &&
     player.marriageStatus === 'married' &&
     player.children < CHILDREN_LIMIT &&
     state.phase !== 'CARD_DECISION'
@@ -59,7 +59,7 @@ function validateBranchCoverage(state: GameState, prevState: GameState, action: 
     next = appendBug(next, {
       category: 'branch_missing',
       severity: 'critical',
-      message: '已婚玩家落在生育格但未进入 CARD_DECISION',
+      message: '已婚玩家落在家庭格但未进入 CARD_DECISION',
       action: action.type,
       snapshot: { phase: state.phase, currentCard: state.currentCard },
     });
@@ -67,14 +67,14 @@ function validateBranchCoverage(state: GameState, prevState: GameState, action: 
 
   if (
     action.type === 'MOVE_PLAYER' &&
-    space.type === 'marriage' &&
-    (player.marriageStatus === 'single' || player.marriageStatus === 'divorced' || player.marriageStatus === 'married') &&
+    space.type === 'family' &&
+    (player.marriageStatus === 'single' || player.marriageStatus === 'divorced') &&
     state.phase !== 'CARD_DECISION'
   ) {
     next = appendBug(next, {
       category: 'branch_missing',
       severity: 'critical',
-      message: '玩家落在婚恋格但未进入 CARD_DECISION',
+      message: '单身/离异玩家落在家庭格但未进入 CARD_DECISION',
       action: action.type,
     });
   }
@@ -228,7 +228,7 @@ export function runTestValidators(
       !next.pendingLiquidation &&
       !next.pendingCashFlowSettlement &&
       space &&
-      !['baby', 'marriage', 'charity', 'promotion', 'settlement'].includes(space.type);
+      !['family', 'charity', 'promotion', 'settlement'].includes(space.type);
 
     if (cardStuck || (needsCard && !next.currentCard)) {
       const count = (next.testTimeoutRecord?.[cardStuckKey] ?? 0) + 1;
@@ -273,7 +273,9 @@ export function runTestValidators(
     needsLiquidation(player, next.cashFlowMultiplier, next.sectorMultiplier) &&
     !next.pendingLiquidation &&
     next.phase !== 'GAME_OVER' &&
-    !player.isBankrupt
+    !player.isBankrupt &&
+    // 仅在结算/移动时检查变卖遗漏，中间态操作（BUY_ASSET/PAY_DOODAD 等）不触发
+    (action.type === 'END_TURN' || action.type === 'MOVE_PLAYER')
   ) {
     next = appendBug(next, {
       category: 'bankruptcy',
@@ -379,18 +381,17 @@ export function runTestValidators(
     }
   }
 
-  // 【新增】v3.7 高负债幸福惩罚缺失（仅在月度结算后检查）
-  if (player && action.type === 'MOVE_PLAYER') {
+  // 【新增】v3.7 高负债幸福惩罚缺失（仅在月度结算后检查，限制频率）
+  if (player && action.type === 'MOVE_PLAYER' && player.marriageStatus === 'married' && next.phase === 'ROLLING') {
     const highDebtPenalty = calcHighDebtHappinessPenalty(player);
-    if (highDebtPenalty > 0 && player.marriageStatus === 'married' && next.phase !== 'GAME_OVER') {
-      if (!player.highDebtHappinessPenalty || player.highDebtHappinessPenalty <= 0) {
-        next = appendBug(next, {
-          category: 'branch_missing',
-          severity: 'warning',
-          message: '高负债幸福惩罚缺失（总负债>3x年收入应扣幸福度）',
-          action: action.type,
-        });
-      }
+    if (highDebtPenalty > 0 && !player.highDebtHappinessPenalty) {
+      // 只检测一次，避免重复 warning
+      next = appendBug(next, {
+        category: 'branch_missing',
+        severity: 'warning',
+        message: `高负债幸福惩罚缺失（总负债${getTotalLiabilities(player)}>3x年收入=${((player.baseSalary ?? player.salary) * 12 * 3).toLocaleString()}应扣幸福度）`,
+        action: action.type,
+      });
     }
   }
 

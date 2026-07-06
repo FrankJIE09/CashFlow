@@ -180,9 +180,9 @@ function advanceOneMonth(state: GameState, playerIndex: number): GameState {
     updated.age >= updated.retireStandardAge &&
     !updated.isRetired
   ) {
-    return { ...newState, pendingLifeEvent: 'retirement' as const };
+    return applyMonthlyStockPeDrift({ ...newState, pendingLifeEvent: 'retirement' as const });
   }
-  return newState;
+  return applyMonthlyStockPeDrift(newState);
 }
 
 function onLapCrossed(state: GameState, playerIndex: number): GameState {
@@ -619,6 +619,29 @@ function applyMonthlyMarketDrift(state: GameState): GameState {
   return { ...state, marketMultiplier: newMult, cashFlowMultiplier: newCF };
 }
 
+/**
+ * 月度股票 PE 随机波动：对所有玩家持有的股票资产，
+ * 每个游戏月施加 ±6% 随机漂移（控制在 basePe×0.4 ~ basePe×2.0 范围内防止极端偏离）
+ */
+function applyMonthlyStockPeDrift(state: GameState): GameState {
+  const players = state.players.map((player) => {
+    const assets = player.assets.map((asset) => {
+      if (!isStockLotAsset(asset) || asset.basePe == null) return asset;
+      const basePe = asset.basePe;
+      const currentPe = asset.currentPe ?? basePe;
+      const DRIFT_RANGE = 0.06; // ±6%
+      const driftPct = (Math.random() - 0.5) * 2 * DRIFT_RANGE;
+      let newPe = currentPe * (1 + driftPct);
+      const minPe = basePe * 0.4;
+      const maxPe = basePe * 2.0;
+      newPe = Math.max(minPe, Math.min(maxPe, newPe));
+      return { ...asset, currentPe: Math.round(newPe * 100) / 100 };
+    });
+    return { ...player, assets };
+  });
+  return { ...state, players };
+}
+
 function advanceTurn(state: GameState): GameState {
   const nextIndex = findNextActivePlayer(state);
   const isNewRound = nextIndex === 0;
@@ -708,6 +731,11 @@ function checkAndHandleBankruptcy(state: GameState): GameState {
       return { ...state, pendingLiquidation: false };
     }
     return state;
+  }
+
+  // 现金已为正数（如变卖资产后）：清除变卖标记，不需继续变卖
+  if (player.cash > 0 && state.pendingLiquidation) {
+    return { ...state, pendingLiquidation: false };
   }
 
   if (needsLiquidation(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
@@ -923,6 +951,10 @@ function executeBuyAsset(
 
   // 先生成资产 ID，使贷款可关联到此抵押资产
   const newAssetId = generateId();
+
+  if (shortfall > 0 && finalAsset.type === 'stock') {
+    return addLog({ ...state, phase: 'TURN_END', currentCard: null }, player.id, `${player.name} 现金不足，${finalAsset.name}（股票）不允许贷款购买`, 'system');
+  }
 
   if (shortfall > 0) {
     newState = updatePlayer(newState, playerIndex, (p) => ({
@@ -1760,33 +1792,26 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         case 'charity': {
           return { ...newState, phase: 'CARD_DECISION' };
         }
-        case 'baby': {
-          if (currentPlayer.marriageStatus !== 'married') {
-            newState = addLog(newState, currentPlayer.id, `${currentPlayer.name} 尚未结婚，生育格子跳过`, 'system');
-            return { ...newState, phase: 'TURN_END', currentCard: null };
-          }
-          if (currentPlayer.children >= CHILDREN_LIMIT && !currentPlayer.hasPregnancy) {
-            newState = addLog(
-              newState,
-              currentPlayer.id,
-              `${currentPlayer.name} 已经有 ${CHILDREN_LIMIT} 个孩子了`,
-              'system'
-            );
-            return { ...newState, phase: 'TURN_END', currentCard: null };
-          }
-          return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null };
-        }
-        case 'marriage': {
+        case 'family': {
+          // 综合家庭格：根据婚姻状态分支
           if (currentPlayer.marriageStatus === 'ineligible') {
-            newState = addLog(newState, currentPlayer.id, `${currentPlayer.name} 已永久失去再婚资格`, 'system');
+            newState = addLog(newState, currentPlayer.id, `${currentPlayer.name} 已永久失去再婚资格，家庭格跳过`, 'system');
             return { ...newState, phase: 'TURN_END', currentCard: null };
-          }
-          if (currentPlayer.marriageStatus === 'divorced') {
-            return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null, careerEvent: null };
           }
           if (currentPlayer.marriageStatus === 'married') {
+            // 已婚 → 生育/怀孕事件
+            if (currentPlayer.children >= CHILDREN_LIMIT && !currentPlayer.hasPregnancy) {
+              newState = addLog(
+                newState,
+                currentPlayer.id,
+                `${currentPlayer.name} 已经有 ${CHILDREN_LIMIT} 个孩子了`,
+                'system'
+              );
+              return { ...newState, phase: 'TURN_END', currentCard: null };
+            }
             return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null, careerEvent: null };
           }
+          // 单身（single）→ 结婚事件；离异（divorced）→ 再婚事件
           return { ...newState, phase: 'CARD_DECISION', currentCard: null, promotionOffer: null, careerEvent: null };
         }
         case 'promotion': {
@@ -2567,7 +2592,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       // 【修正】v3.10 抵押资产卖出：先还贷再给净值
       const wasSelfLiving = asset.type === 'realEstate' && asset.isSelfLiving;
       let newState = updatePlayer(state, playerIndex, (p) => {
-        const { netCash, updatedLiabilities, deficiency } = settleAssetLoan(p, assetId, sellPrice, `${asset.name}不足额`);
+        const { netCash, updatedLiabilities } = settleAssetLoan(p, assetId, sellPrice, `${asset.name}不足额`);
         const remaining = p.assets.filter((a) => a.id !== assetId);
         if (wasSelfLiving) {
           const nextHome = remaining.find(a => a.type === 'realEstate' && !a.isSelfLiving);
@@ -2610,7 +2635,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       // 【修正】v3.10 抵押资产变卖：先还贷再给净值
       const wasSelfLiving = asset.type === 'realEstate' && asset.isSelfLiving;
       let newState = updatePlayer(state, playerIndex, (p) => {
-        const { netCash, updatedLiabilities, deficiency } = settleAssetLoan(
+        const { netCash, updatedLiabilities } = settleAssetLoan(
           p, assetId, liquidation.proceeds, `${asset.name}变卖差额`
         );
         const remaining = p.assets.filter((a) => a.id !== assetId);
@@ -2672,6 +2697,9 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       }
 
       const afterBankruptcy = checkAndHandleBankruptcy(state);
+      if (afterBankruptcy.pendingLiquidation) {
+        return afterBankruptcy;
+      }
       if (afterBankruptcy.phase === 'GAME_OVER') {
         return afterBankruptcy;
       }
@@ -2698,8 +2726,8 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         return addLog(state, player.id, `${player.name} 卖出手数无效`, 'system');
       }
 
-      // 使用 calcStockProfit（含佣金+印花税）
-      const sellPrice = calcStockProfit(stockAsset, sellHand);
+      // 使用 calcStockProfit（含佣金+印花税+市场乘数）
+      const sellPrice = calcStockProfit(stockAsset, sellHand, state.marketMultiplier, state.sectorMultiplier);
       const remainingLots = totalLots - sellHand;
 
       let newState = updatePlayer(state, playerIndex, (p) => {
@@ -2770,10 +2798,10 @@ function clampPlayerFields(player: Player): Player {
  * 全局现金兜底 + 字段钳位：任何 Action 执行后确保数值合法
  */
 function wrapCashGuard(state: GameState): GameState {
-  if (state.isGameOver || state.phase === 'GAME_OVER' || state.phase === 'SETUP') return state;
+  if (state.phase === 'GAME_OVER' || state.phase === 'SETUP') return state;
   const playerIndex = state.currentPlayerIndex;
   const player = state.players[playerIndex];
-  if (!player || player.isBankrupt || player.isDeceased) return state;
+  if (!player || player.isBankrupt) return state;
 
   // 先检查原始现金是否真的为负（钳位前）
   if (player.cash < 0) {
@@ -2805,7 +2833,11 @@ function wrapCashGuard(state: GameState): GameState {
   }
 
   // 现金 >= 0：仅做字段钳位后返回
-  let clampedState = updatePlayer(state, playerIndex, (p) => clampPlayerFields(p));
+  let clampedState = state;
+  if (state.pendingLiquidation) {
+    clampedState = { ...state, pendingLiquidation: false };
+  }
+  clampedState = updatePlayer(clampedState, playerIndex, (p) => clampPlayerFields(p));
   return clampedState;
 }
 

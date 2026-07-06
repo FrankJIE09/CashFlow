@@ -168,37 +168,27 @@ function autoStep(state: GameState): GameState {
     if (space.type === 'charity') {
       return dispatch(state, { type: 'DONATE_CHARITY', payload: { donate: false } });
     }
-    if (space.type === 'marriage') {
-      if (player.marriageStatus === 'single' || player.marriageStatus === 'divorced') {
-        const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-        return dispatch(state, { type: 'CHOOSE_MARRIAGE', payload: { marry: cashFlow > 2000 } });
-      }
-      if (player.marriageStatus === 'married') {
-        if (player.marriageHappiness < 40) {
-          return dispatch(state, {
-            type: 'RESOLVE_MARRIAGE_GRID',
-            payload: { counseling: player.cash >= player.salary * 0.5 },
-          });
-        }
-        return dispatch(state, { type: 'RESOLVE_MARRIAGE_GRID', payload: {} });
-      }
-      return dispatch(state, { type: 'DECLINE_CARD' });
-    }
-    if (space.type === 'baby') {
-      if (player.marriageStatus !== 'married') {
+    if (space.type === 'family') {
+      if (player.marriageStatus === 'ineligible') {
         return dispatch(state, { type: 'DECLINE_CARD' });
       }
-      if (player.hasPregnancy) {
+      if (player.marriageStatus === 'married') {
+        // 已婚 → 育儿逻辑
+        if (player.hasPregnancy) {
+          return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'postpone' } });
+        }
+        if (
+          player.children < 3 &&
+          getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier) >
+            player.expenses.perChild * 4
+        ) {
+          return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'plan' } });
+        }
         return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'postpone' } });
       }
-      if (
-        player.children < 3 &&
-        getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier) >
-          player.expenses.perChild * 4
-      ) {
-        return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'plan' } });
-      }
-      return dispatch(state, { type: 'CHOOSE_PREGNANCY_PATH', payload: { path: 'postpone' } });
+      // 单身/离异 → 结婚/再婚逻辑
+      const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
+      return dispatch(state, { type: 'CHOOSE_MARRIAGE', payload: { marry: cashFlow > 2000 } });
     }
     if (card?.type === 'opportunity') {
       const recentLogs = state.logs

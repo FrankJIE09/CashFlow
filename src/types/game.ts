@@ -46,8 +46,7 @@ export type SpaceType =
   | 'market'
   | 'doodad'
   | 'charity'
-  | 'baby'
-  | 'marriage'
+  | 'family'
   | 'settlement'
   | 'promotion'; // 【新增】v3.2 升迁格
 

@@ -160,44 +160,37 @@ export function useAIPlayer() {
           }
         } else if (space.type === 'charity') {
           actions.donateCharity(player.difficulty === 'hard' && player.cash > player.salary * 2);
-        } else if (space.type === 'marriage') {
-          if (player.marriageStatus === 'single' || player.marriageStatus === 'divorced') {
+        } else if (space.type === 'family') {
+          if (player.marriageStatus === 'ineligible') {
+            actions.declineCard();
+          } else if (player.marriageStatus === 'married') {
+            // 已婚 → 育儿逻辑
+            if (player.hasPregnancy) {
+              actions.choosePregnancyPath('postpone');
+            } else {
+              const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
+              if (player.dinkTurns && player.dinkTurns > 0) {
+                actions.choosePregnancyPath(
+                  player.difficulty === 'hard' && Math.random() > 0.7 ? 'plan' : 'dink'
+                );
+              } else if (
+                player.children < 3 &&
+                cashFlow > player.expenses.perChild * 2 &&
+                (player.difficulty === 'easy' ? Math.random() > 0.5 : cashFlow > player.expenses.perChild * 4)
+              ) {
+                actions.choosePregnancyPath('plan');
+              } else if (player.difficulty === 'hard' && Math.random() > 0.6) {
+                actions.choosePregnancyPath('dink');
+              } else {
+                actions.choosePregnancyPath('postpone');
+              }
+            }
+          } else {
+            // 单身/离异 → 结婚/再婚逻辑
             const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
             actions.chooseMarriage(
               player.difficulty === 'easy' ? Math.random() > 0.4 : cashFlow > 2000
             );
-          } else if (player.marriageStatus === 'married') {
-            if (player.marriageHappiness < 40) {
-              actions.resolveMarriageGrid(player.cash >= player.salary * 0.5);
-            } else {
-              actions.resolveMarriageGrid();
-            }
-          } else {
-            actions.declineCard();
-          }
-        } else if (space.type === 'baby') {
-          if (player.marriageStatus !== 'married') {
-            actions.declineCard();
-          } else {
-            const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-            if (player.hasPregnancy) {
-              actions.choosePregnancyPath('postpone');
-            } else if (player.dinkTurns && player.dinkTurns > 0) {
-              // DINK 风险：困难 AI 更可能维持 DINK
-              actions.choosePregnancyPath(
-                player.difficulty === 'hard' && Math.random() > 0.7 ? 'plan' : 'dink'
-              );
-            } else if (
-              player.children < 3 &&
-              cashFlow > player.expenses.perChild * 2 &&
-              (player.difficulty === 'easy' ? Math.random() > 0.5 : cashFlow > player.expenses.perChild * 4)
-            ) {
-              actions.choosePregnancyPath('plan');
-            } else if (player.difficulty === 'hard' && Math.random() > 0.6) {
-              actions.choosePregnancyPath('dink');
-            } else {
-              actions.choosePregnancyPath('postpone');
-            }
           }
         } else if (card?.type === 'opportunity') {
           const recentLogs = state.logs.slice(-5).map((l) => l.message).join(' ');

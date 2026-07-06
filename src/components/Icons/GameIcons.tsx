@@ -5,8 +5,7 @@ export const SPACE_ICONS: Record<string, string> = {
   market: '📈',
   doodad: '🛍️',
   charity: '💝',
-  baby: '👶',
-  marriage: '💍',
+  family: '👨‍👩‍👧‍👦',
   settlement: '🏛️',
   promotion: '🎖️',
 };

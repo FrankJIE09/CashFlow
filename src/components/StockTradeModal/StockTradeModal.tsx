@@ -44,7 +44,7 @@ export function StockTradeModal({ onClose }: StockTradeModalProps) {
     for (const asset of stockAssets) {
       const qty = sellInputs[asset.id];
       if (qty && qty > 0 && qty <= (asset.shareHand ?? 0)) {
-        sum += calcStockProfit(asset, qty);
+        sum += calcStockProfit(asset, qty, state.marketMultiplier, state.sectorMultiplier);
       }
     }
     return sum;
@@ -64,19 +64,20 @@ export function StockTradeModal({ onClose }: StockTradeModalProps) {
           ) : (
             <div className={styles.stockList}>
               {stockAssets.map((asset) => {
-                const currentPrice = calcCurrentStockPrice(asset);
+                const currentPrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
                 const basePe = getStockBasePe(asset);
                 const currentPe = asset.currentPe ?? basePe;
                 const valuation = judgeStockValuation(currentPe, basePe);
                 const totalLots = asset.shareHand ?? 0;
-                const marketValue = calcCurrentStockMarketValue(asset);
+                const marketValue = calcCurrentStockMarketValue(asset, state.marketMultiplier, state.sectorMultiplier);
                 const intrinsicPrice = asset.intrinsicPrice ?? getStockIntrinsicValue(asset.yearDivPerShare ?? 0, basePe);
                 const buyPrice = asset.originalSinglePrice ?? asset.singlePrice ?? 0;
                 const profitPerShare = currentPrice - buyPrice;
                 const profitPct = buyPrice > 0 ? ((profitPerShare / buyPrice) * 100).toFixed(1) : '0';
 
                 const sellQty = sellInputs[asset.id] ?? 0;
-                const previewProceeds = sellQty > 0 ? calcStockProfit(asset, sellQty) : 0;
+                const previewProceeds = sellQty > 0 ? calcStockProfit(asset, sellQty, state.marketMultiplier, state.sectorMultiplier) : 0;
+                const effectiveMaxSell = totalLots;
 
                 return (
                   <div key={asset.id} className={styles.stockCard}>
@@ -129,7 +130,7 @@ export function StockTradeModal({ onClose }: StockTradeModalProps) {
                         <input
                           type="number"
                           min={1}
-                          max={totalLots}
+                          max={effectiveMaxSell}
                           step={1}
                           value={sellInputs[asset.id] ?? ''}
                           onChange={(e) => {
@@ -147,7 +148,7 @@ export function StockTradeModal({ onClose }: StockTradeModalProps) {
                       )}
                       <button
                         className={styles.sellButton}
-                        disabled={!sellQty || sellQty < 1 || sellQty > totalLots}
+                        disabled={!sellQty || sellQty < 1 || sellQty > effectiveMaxSell}
                         onClick={() => handleSell(asset.id, sellQty)}
                       >
                         卖出{sellQty > 0 ? ` ${sellQty}手` : ''}

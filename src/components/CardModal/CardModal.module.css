@@ -335,6 +335,12 @@
   border-radius: 6px;
 }
 
+.divider {
+  border: none;
+  border-top: 2px dashed #ddd;
+  margin: 16px 0;
+}
+
 /* 【新增】v3.6 PE 估值提示 */
 .valuationHint {
   background: #F0F8FF;

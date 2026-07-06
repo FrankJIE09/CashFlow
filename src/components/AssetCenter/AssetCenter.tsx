@@ -101,8 +101,8 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
     let priceInfo: React.ReactNode = null;
     if (stockLike) {
       const buyPrice = getStockBuyPrice(asset);
-      const curPrice = calcCurrentStockPrice(asset);
-      const changePct = getStockPriceChange(asset);
+      const curPrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
+      const changePct = getStockPriceChange(asset, state.marketMultiplier, state.sectorMultiplier);
       const isUp = changePct >= 0;
       const pb = getStockCurrentPb(asset);
       const basePe = getStockBasePe(asset);
