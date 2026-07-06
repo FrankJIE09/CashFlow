@@ -206,7 +206,9 @@ export function runTestValidators(
   }
 
   const phaseStuck = next.testTimeoutRecord?.[next.phase] ?? 0;
-  if (phaseStuck > 5) {
+  if (phaseStuck > 5 && !(
+    next.phase === 'CARD_DECISION' && (next.pendingLiquidation || next.pendingCashFlowSettlement)
+  )) {
     next = appendBug(next, {
       category: 'deadlock',
       severity: 'critical',

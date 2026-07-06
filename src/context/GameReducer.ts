@@ -2865,7 +2865,7 @@ function wrapCashGuard(state: GameState): GameState {
   if (!player || player.isBankrupt) return state;
 
   // 先检查原始现金是否真的为负（钳位前）
-  if (player.cash < 0) {
+  if (player.cash <= 0) {
     if (needsLiquidation(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
       if (state.pendingLiquidation && state.phase === 'CARD_DECISION') return state;
       // 不钳位，让 LiquidateModal 看到真实负现金

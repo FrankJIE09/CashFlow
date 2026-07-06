@@ -7,6 +7,7 @@ import { PROFESSIONS } from '../../data/professions';
 import {
   calcEmergencyReserveMonths,
   calcUnemploymentHappinessPenalty,
+  getEffectiveSalary,
   getMonthlyCashFlow,
   getNetWorth,
   getPassiveIncome,
@@ -55,6 +56,7 @@ export function PlayerPanel() {
   const city = getCityById(selectedPlayer.cityId);
   const expenseMult = getCityExpenseMultiplier(selectedPlayer.cityId);
   const monthlyCashFlow = getMonthlyCashFlow(selectedPlayer, state.cashFlowMultiplier, state.sectorMultiplier);
+  const effectiveSalary = getEffectiveSalary(selectedPlayer);
   const netWorth = getNetWorth(selectedPlayer, state.marketMultiplier, state.sectorMultiplier);
   const debt = getCurrentDebt(selectedPlayer);
   const maxReference = Math.max(Math.abs(monthlyCashFlow), 5000) * 1.5;
@@ -245,7 +247,7 @@ export function PlayerPanel() {
             <span className={styles.statIcon}>💵</span>
             <span className={styles.statLabel}>{selectedPlayer.isRetired ? '养老金' : '工资'}</span>
             <span className={styles.statValue}>
-              {formatCurrency(selectedPlayer.isRetired ? selectedPlayer.pensionIncome : selectedPlayer.salary)}
+              {formatCurrency(effectiveSalary)}
             </span>
           </div>
           <div className={styles.statItem}>

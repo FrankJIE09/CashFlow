@@ -1157,11 +1157,26 @@ export function canAffordStockLots(player: Player, asset: Asset, lots: number): 
 export function canPurchaseOpportunity(
   player: Player,
   card: OpportunityCard,
-  _marketMultiplier: Record<AssetType, number>,
-  _sectorMultiplier: Record<string, number> = {}
+  marketMultiplier: Record<AssetType, number>,
+  sectorMultiplier: Record<string, number> = {}
 ): { allowed: boolean; reason?: string } {
   if (card.minCashRequired && player.cash < card.minCashRequired) {
     return { allowed: false, reason: `需要现金 ≥ ${card.minCashRequired.toLocaleString()} 元` };
+  }
+  // 校验玩家是否付得起首付
+  const asset = card.asset;
+  if (isStockLotAsset(asset)) {
+    const cost1 = stockLotBuyCost(1, asset.singlePrice ?? 0);
+    if (player.cash < cost1) {
+      return { allowed: false, reason: `现金不足，至少需要 ${cost1.toLocaleString()} 元买1手` };
+    }
+  } else {
+    const downPayment = asset.downPayment;
+    const fee = Math.round(downPayment * getTransactionCostRate(asset.type));
+    const totalCost = downPayment + fee + (card.dueDiligenceCost ?? 0);
+    if (player.cash < totalCost) {
+      return { allowed: false, reason: `现金不足，需要 ${totalCost.toLocaleString()} 元（首付+费用）` };
+    }
   }
   return { allowed: true };
 }

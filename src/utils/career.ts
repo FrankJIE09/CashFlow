@@ -205,7 +205,7 @@ function createCareerChangeEvent(player: Player): CareerEvent {
   return {
     type: 'careerChange',
     title: '职业转型/创业',
-    description: `决定转型或创业：短期月薪降至 50%，5 回合内恢复至原薪资 +${Math.round(targetBoost * 100)}%。转型期裁员风险中等，失败额外损失约 ${failureCost} 元。`,
+    description: `决定转型或创业：月薪降至 50%，每次发薪恢复一部分，${5} 次后达到原薪资 × ${(1 + targetBoost).toFixed(2)}（+${Math.round(targetBoost * 100)}%）。转型期裁员风险 +20%，20% 概率失败损失约 ${failureCost.toLocaleString()} 元。`,
     transitionSalaryRatio: 0.5,
     recoveryTurns: 5,
     targetSalaryBoostPct: targetBoost,

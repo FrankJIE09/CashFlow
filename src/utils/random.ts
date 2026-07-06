@@ -18,17 +18,12 @@ export function rollTwoDice(): [number, number] {
 }
 
 export function drawCard<T extends Card>(deck: T[], discardPile: T[]): { card: T; deck: T[]; discardPile: T[] } | null {
-  if (deck.length === 0) {
-    if (discardPile.length === 0) return null;
-    deck = shuffle(discardPile);
-    discardPile = [];
-  }
-
-  const card = deck[0];
-  const newDeck = deck.slice(1);
-  const newDiscardPile = [...discardPile, card];
-
-  return { card, deck: newDeck, discardPile: newDiscardPile };
+  const pool = [...deck, ...discardPile];
+  if (pool.length === 0) return null;
+  const idx = Math.floor(Math.random() * pool.length);
+  const card = pool[idx];
+  // 抽过的卡放回牌堆，下次仍有可能抽到同一张
+  return { card, deck: pool, discardPile: [] };
 }
 
 export function createInitialDecks(): Decks {

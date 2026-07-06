@@ -9,10 +9,14 @@ import type { AssetType, Card, GameAction, GameState, Player, Asset } from '../s
 import {
   canPurchaseOpportunity,
   checkBankruptcy,
+  getAssetCashFlow,
+  getAssetMarketValue,
   getHighestPriorityDebt,
+  getEffectiveSalary,
   getMonthlyCashFlow,
   getPassiveIncome,
   getSellableAssets,
+  getStockLotMonthlyDividend,
   getTotalExpenses,
   isStockLotAsset,
   previewRepayment,
@@ -34,6 +38,39 @@ const GROWTH_SECTORS = new Set(['科技', '新能源', '先进制造']);
 // ──────────────────────────────────────────────
 // 丰富快照类型：涵盖玩家画像、持仓估值、负债结构、市场状态
 // ──────────────────────────────────────────────
+interface AssetCashFlowInfo {
+  name: string;
+  type: string;
+  sector: string;
+  // 市值
+  baseMarketValue: number;
+  currentMarketValue: number;
+  mvTypeMult: number;
+  mvSectorMult: number;
+  // 现金流
+  baseFlow: number;
+  typeMult: number;
+  sectorMult: number;
+  actualFlow: number;
+  // 价格/持仓（股票类）
+  singlePrice?: number;
+  intrinsicPrice?: number;
+  costPerShare?: number;
+  profitPct?: number;
+  profitAmount?: number;
+  // PE/PB/股息（股票类）
+  basePe?: number;
+  currentPe?: number;
+  pb?: number;
+  dividendYield?: number;
+  yearDivPerShare?: number;
+  monthlyDividend?: number;
+  heldMonths?: number;
+  shares?: number;
+  shareHand?: number;
+  isSelfLiving?: boolean;
+}
+
 interface RichSnapshot {
   round: number;
   phase: string;
@@ -66,6 +103,8 @@ interface RichSnapshot {
   // 市场状态
   interestRate: number;
   marketEvent: string; // 最近发生的市场事件
+  // 每项资产的现金流明细（验证乘数生效）
+  assetCashFlows: AssetCashFlowInfo[];
 }
 
 function dispatch(state: GameState, action: GameAction): GameState {
@@ -375,6 +414,7 @@ function buildSnapshot(state: GameState): RichSnapshot {
       liabilityCount: 0, liabilityTotalPrincipal: 0, rentExpense: 0,
       stockCount: 0, stockTotalValue: 0, stockTotalCost: 0, stockPositions: [],
       interestRate: state.interestRate, marketEvent: '',
+      assetCashFlows: [],
     };
   }
 
@@ -424,7 +464,7 @@ function buildSnapshot(state: GameState): RichSnapshot {
     isBankrupt: p.isBankrupt ?? false,
     cash: p.cash ?? 0,
     cashFlow: cf,
-    salary: p.salary ?? 0,
+    salary: getEffectiveSalary(p),
     passiveIncome: getPassiveIncome(p, state.cashFlowMultiplier, state.sectorMultiplier),
     expenses: getTotalExpenses(p),
     netWorth: getNetWorth(p, state.marketMultiplier, state.sectorMultiplier),
@@ -438,6 +478,45 @@ function buildSnapshot(state: GameState): RichSnapshot {
     stockPositions,
     interestRate: state.interestRate,
     marketEvent: recentLogs,
+    assetCashFlows: p.assets.map((a) => {
+      const typeMult = state.cashFlowMultiplier[a.type] ?? 1;
+      const sectorMult = a.metadata?.sector ? (state.sectorMultiplier[a.metadata.sector] ?? 1) : 1;
+      const baseFlow = isStockLotAsset(a) ? getStockLotMonthlyDividend(a) : a.cashFlow;
+      const actualFlow = getAssetCashFlow(a, state.cashFlowMultiplier, state.sectorMultiplier);
+      const mvTypeMult = state.marketMultiplier[a.type] ?? 1;
+      const mvSectorMult = a.metadata?.sector ? (state.sectorMultiplier[a.metadata.sector] ?? 1) : 1;
+      const baseMV = a.marketValue ?? 0;
+      const currentMV = getAssetMarketValue(a, mvTypeMult, state.sectorMultiplier);
+      const isStock = isStockLotAsset(a);
+      const totalShares = (a.shareHand ?? 0) * 100;
+      const buyPrice = totalShares > 0 ? (a.cost ?? 0) / totalShares : 0;
+      const curPrice = calcCurrentStockPrice(a);
+      const profitAmt = isStock ? curPrice - buyPrice : 0;
+      const profitPct = buyPrice > 0 ? Math.round((profitAmt / buyPrice) * 10000) / 100 : 0;
+      const monthlyDiv = isStock ? getStockLotMonthlyDividend(a) : 0;
+      return {
+        name: a.name, type: a.type,
+        sector: a.metadata?.sector ?? '',
+        baseMarketValue: baseMV, currentMarketValue: currentMV,
+        mvTypeMult, mvSectorMult,
+        baseFlow, typeMult, sectorMult, actualFlow,
+        singlePrice: isStock ? curPrice : undefined,
+        intrinsicPrice: a.intrinsicPrice,
+        costPerShare: buyPrice > 0 ? buyPrice : undefined,
+        profitPct: isStock ? profitPct : undefined,
+        profitAmount: isStock ? Math.round(profitAmt * (a.shareHand ?? 0) * 100) : undefined,
+        basePe: a.basePe,
+        currentPe: a.currentPe,
+        pb: a.metadata?.pb,
+        dividendYield: a.metadata?.dividendYield,
+        yearDivPerShare: a.yearDivPerShare,
+        monthlyDividend: monthlyDiv > 0 ? monthlyDiv : undefined,
+        heldMonths: a.heldMonths,
+        shares: totalShares > 0 ? totalShares : undefined,
+        shareHand: a.shareHand,
+        isSelfLiving: a.isSelfLiving,
+      };
+    }),
   };
 }
 
@@ -598,12 +677,76 @@ function runAutoTest(maxRounds: number, seed?: number): GameState {
       if (s.stockPositions.length > 0) {
         console.log(`  📊 ${s.stockPositions.join(' | ')}`);
       }
+      // 打印资产现金流明细
+      if (s.assetCashFlows.length > 0) {
+        for (const a of s.assetCashFlows) {
+          const cfLine = a.typeMult !== 1 || a.sectorMult !== 1
+            ? `现金流 ${a.baseFlow} × ${a.typeMult.toFixed(2)}(类型) × ${a.sectorMult.toFixed(2)}(行业) = ${a.actualFlow}`
+            : `现金流 ${a.actualFlow}`;
+          const mvLine = a.mvTypeMult !== 1 || a.mvSectorMult !== 1
+            ? `市值 ${a.baseMarketValue} × ${a.mvTypeMult.toFixed(2)}(类型) × ${a.mvSectorMult.toFixed(2)}(行业) = ${a.currentMarketValue}`
+            : null;
+          const stockLine = a.singlePrice != null
+            ? `现价¥${a.singlePrice} 成本¥${(a.costPerShare ?? 0).toFixed(2)} PE${a.currentPe ?? '-'}/${a.basePe ?? '-'} PB${a.pb?.toFixed(2) ?? '-'} 息${((a.dividendYield ?? 0) * 100).toFixed(1)}% 浮${(a.profitPct ?? 0) >= 0 ? '+' : ''}${(a.profitPct ?? 0).toFixed(1)}%`
+            : null;
+          const parts = [a.name + (a.isSelfLiving ? '(自住)' : ''), cfLine];
+          if (mvLine) parts.push(mvLine);
+          if (stockLine) parts.push(stockLine);
+          console.log(`  💰 ${parts.join(' | ')}`);
+        }
+      }
       // 打印市场事件
       if (s.marketEvent) {
         console.log(`  📰 ${s.marketEvent}`);
       }
     }
   }
+
+  // ── 资产现金流乘数校验 ──
+  let cfMismatchCount = 0;
+  let mvMismatchCount = 0;
+  for (const s of snapshotHistory) {
+    for (const a of s.assetCashFlows) {
+      // 现金流校验
+      const expected = Math.round(a.baseFlow * a.typeMult * a.sectorMult);
+      if (a.actualFlow !== expected) {
+        if (cfMismatchCount === 0) console.log('\n── ⚠️ 资产现金流乘数不一致 ──');
+        console.log(`  R${s.round} ${a.name}: 期望 ${expected} = ${a.baseFlow}×${a.typeMult}×${a.sectorMult}，实际 ${a.actualFlow}`);
+        cfMismatchCount++;
+      }
+      // 市值校验（仅非股票类，股票类走PE定价无法简单乘）
+      if (!(a.singlePrice != null)) {
+        const expectedMV = Math.round(a.baseMarketValue * a.mvTypeMult * a.mvSectorMult);
+        if (a.currentMarketValue !== expectedMV) {
+          if (mvMismatchCount === 0) console.log('\n── ⚠️ 资产市值乘数不一致（非股票类）──');
+          console.log(`  R${s.round} ${a.name}: 期望 ${expectedMV} = ${a.baseMarketValue}×${a.mvTypeMult}×${a.mvSectorMult}，实际 ${a.currentMarketValue}`);
+          mvMismatchCount++;
+        }
+      }
+    }
+  }
+  // 被动收入汇总校验
+  let piMismatchCount = 0;
+  for (const s of snapshotHistory) {
+    const sumAssetCF = s.assetCashFlows.reduce((sum, a) => sum + a.actualFlow, 0);
+    if (sumAssetCF !== s.passiveIncome) {
+      if (piMismatchCount === 0) console.log('\n── ⚠️ 被动收入与资产汇总不一致 ──');
+      console.log(`  R${s.round}: 资产汇总 ${sumAssetCF} ≠ 被动收入 ${s.passiveIncome}`);
+      piMismatchCount++;
+    }
+  }
+
+  if (cfMismatchCount === 0 && snapshotHistory.some((s) => s.assetCashFlows.length > 0)) {
+    console.log('\n✅ 全部资产现金流 = baseFlow × 乘数，验证通过');
+  }
+  if (mvMismatchCount === 0 && snapshotHistory.some((s) => s.assetCashFlows.some((a) => a.singlePrice == null))) {
+    console.log('✅ 非股票类资产市值 = baseMV × 乘数，验证通过');
+  }
+  if (piMismatchCount === 0 && snapshotHistory.some((s) => s.assetCashFlows.length > 0)) {
+    console.log('✅ 被动收入 = ∑资产月现金流，验证通过');
+  }
+  const totalMismatch = cfMismatchCount + mvMismatchCount + piMismatchCount;
+  if (totalMismatch > 0) console.log(`\n❌ 共 ${totalMismatch} 处不一致`);
 
   // ── 异常模式分析 ──
   const anomalies = analyzeAnomalies(snapshotHistory);

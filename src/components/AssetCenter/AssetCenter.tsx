@@ -5,6 +5,7 @@ import { useGameActions } from '../../hooks/useGameActions';
 import {
   getRentExpense,
   isStockLotAsset,
+  getAssetCashFlow,
   getAssetMarketValue,
   getAssetTypeLabel,
   calcCurrentStockPrice,
@@ -95,6 +96,10 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
       state.marketMultiplier[asset.type],
       state.sectorMultiplier
     );
+    const actualCF = getAssetCashFlow(asset, state.cashFlowMultiplier, state.sectorMultiplier);
+    const cfTypeMult = state.cashFlowMultiplier[asset.type] ?? 1;
+    const cfSectorMult = asset.metadata?.sector ? (state.sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+    const hasCfMult = cfTypeMult !== 1 || cfSectorMult !== 1;
 
     // 证券类资产价格信息
     let priceInfo: React.ReactNode = null;
@@ -155,7 +160,7 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
           </div>
           {priceInfo}
           <div className={styles.assetMeta}>
-            市值 {marketValue.toLocaleString()} 元 | 月现金流 +{asset.cashFlow} 元
+            市值 {marketValue.toLocaleString()} 元 | 月现金流 +{actualCF} 元{hasCfMult ? `（基础 ${asset.cashFlow} × 类型${cfTypeMult.toFixed(2)}${cfSectorMult !== 1 ? ` × 行业${cfSectorMult.toFixed(2)}` : ''}）` : ''}
           </div>
         </div>
         <div className={styles.assetActions}>

@@ -189,6 +189,12 @@
   font-size: 11px;
 }
 
+.multiplierHint {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #999;
+}
+
 .liabilityGroup {
   margin-top: 4px;
 }

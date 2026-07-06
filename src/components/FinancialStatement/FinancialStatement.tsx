@@ -6,7 +6,9 @@ import { getPlayerProfessionName } from '../../data/professions';
 import {
   DEBT_TYPE_CONFIG,
   calcEmergencyReserveMonths,
+  getAssetCashFlow,
   getAssetMarketValue,
+  getEffectiveSalary,
   getAssetTypeLabel,
   getDebtTypeConfig,
   getDebtTypeLabel,
@@ -66,6 +68,8 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
 
   const [repayTarget, setRepayTarget] = useState<Liability | null>(null);
   const [showStockTrade, setShowStockTrade] = useState(false);
+  const effectiveSalary = getEffectiveSalary(player);
+  const passiveIncome = getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier);
   const monthlyCashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
   const emergencyReserve = calcEmergencyReserveMonths(player, state.cashFlowMultiplier, state.sectorMultiplier);
   const sellableAssets = useMemo(() => getSellableAssets(player), [player.assets]);
@@ -86,11 +90,23 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
             <h3>收入 {player.marriageStatus === 'married' ? '（家庭合并）' : ''}</h3>
             <div className={styles.row}>
               <span>{player.marriageStatus === 'married' ? '家庭工资收入' : '工资收入'}</span>
-              <span>{formatCurrency(player.salary)}</span>
+              <span>{formatCurrency(effectiveSalary)}</span>
             </div>
-            {player.marriageStatus === 'married' && player.familyIncome != null && (
+            {player.marriageStatus === 'married' && (
               <div className={styles.subRow}>
                 <span>└ 个人月薪 {formatCurrency(player.salary)}</span>
+                <span></span>
+              </div>
+            )}
+            {player.marriageStatus === 'married' && (player.partnerSalary ?? 0) > 0 && (
+              <div className={styles.subRow}>
+                <span>└ 配偶工资 {formatCurrency(player.partnerSalary)}</span>
+                <span></span>
+              </div>
+            )}
+            {player.marriageStatus === 'married' && player.marriageHappiness >= 50 && (
+              <div className={styles.subRow}>
+                <span>└ 幸福度加成 +10%</span>
                 <span></span>
               </div>
             )}
@@ -124,14 +140,9 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
               </>
             )}
             <div className={`${styles.row} ${styles.total}`}>
-              <span>总收入</span>
+              <span>总收入（工资 + 被动）</span>
               <span>
-                {formatCurrency(
-                  player.salary +
-                  getPassiveIncome(player, state.cashFlowMultiplier, state.sectorMultiplier) +
-                  (player.maternitySubsidy ?? 0) +
-                  (player.childAges.length > 0 ? player.childAges.length * Math.round(200) : 0)
-                )}
+                {formatCurrency(effectiveSalary + passiveIncome)}
               </span>
             </div>
           </section>
@@ -307,7 +318,17 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                             getAssetMarketValue(asset, state.marketMultiplier[asset.type], state.sectorMultiplier)
                           )}
                         </span>
-                        <span>月现金流 +{formatCurrency(asset.cashFlow)}</span>
+                        <span>月现金流 +{formatCurrency(getAssetCashFlow(asset, state.cashFlowMultiplier, state.sectorMultiplier))}</span>
+                        {(() => {
+                          const cfTypeMult = state.cashFlowMultiplier[asset.type] ?? 1;
+                          const cfSectorMult = asset.metadata?.sector ? (state.sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
+                          if (cfTypeMult === 1 && cfSectorMult === 1) return null;
+                          return (
+                            <span className={styles.multiplierHint}>
+                              （基础 {formatCurrency(asset.cashFlow)} × 类型{cfTypeMult.toFixed(2)}{cfSectorMult !== 1 ? ` × 行业${cfSectorMult.toFixed(2)}` : ''}）
+                            </span>
+                          );
+                        })()}
                       </div>
                       {peInfo}
                       {canLiquidate && monthlyCashFlow < 0 && (

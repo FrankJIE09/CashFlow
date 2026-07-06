@@ -8,10 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:auto": "tsx scripts/runAutoTest.ts 50",
     "test:auto": "tsx scripts/runAutoTest.ts"
   },
   "dependencies": {
+    "@playwright/test": "^1.61.1",
     "framer-motion": "^12.42.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
