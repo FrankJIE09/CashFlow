@@ -140,8 +140,8 @@ export function useGameActions() {
     dispatch({ type: 'CONFIRM_CASH_FLOW_SETTLEMENT' });
   }, [dispatch]);
 
-  const confirmDivorce = useCallback(() => {
-    dispatch({ type: 'CONFIRM_DIVORCE' });
+  const confirmDivorce = useCallback((keepHouse: boolean) => {
+    dispatch({ type: 'CONFIRM_DIVORCE', payload: { keepHouse } });
   }, [dispatch]);
 
   const sellStockManually = useCallback((assetId: string, sellHand: number) => {

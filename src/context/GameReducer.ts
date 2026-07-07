@@ -21,6 +21,7 @@ import {
   getAssetTypeLabel,
   getMonthlyCashFlow,
   getOpportunityAsset,
+  getPassiveIncome,
   getPropertyTax,
   getRealEstateMortgageDebtType,
   getTotalAssetsValue,
@@ -394,7 +395,9 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
 
     // 婚恋幸福度与 DINK
   if (afterTemp.marriageStatus === 'married') {
-    const salaryBonus = calcMarriageHappinessBySalary(afterTemp.salary);
+    const passiveIncome = getPassiveIncome(afterTemp, state.cashFlowMultiplier, state.sectorMultiplier);
+    const city = getCityById(afterTemp.cityId);
+    const salaryBonus = calcMarriageHappinessBySalary(afterTemp.salary, passiveIncome, city.expenseMultiplier);
     const promoBoost = afterTemp.monthlyMarriageHappinessBoost ?? 0;
     const delta = rollMarriageHappinessDelta() + salaryBonus + promoBoost;
     newState = updatePlayer(newState, playerIndex, (p) => {
@@ -487,18 +490,18 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
       }
     }
 
-    // 离婚判定
+    // 离婚判定：改为设置待确认弹窗
     const afterLife = newState.players[playerIndex];
     const divorceProb = getDivorceProbability(afterLife);
     if (divorceProb > 0 && Math.random() < divorceProb) {
-      newState = executeDivorce(newState, playerIndex);
+      newState = prepareDivorcePending(newState, playerIndex);
     }
   }
 
   return checkAndHandleBankruptcy(newState);
 }
 
-function executeDivorce(state: GameState, playerIndex: number): GameState {
+function executeDivorce(state: GameState, playerIndex: number, keepHouse: boolean): GameState {
   const player = state.players[playerIndex];
   const settlement = divorceSettlement(player);
   const legalFees = settlement.legalFees;
@@ -507,48 +510,76 @@ function executeDivorce(state: GameState, playerIndex: number): GameState {
   const divorceCount = (player.divorceCount ?? 0) + 1;
   const newStatus = divorceCount >= 2 ? ('ineligible' as const) : ('divorced' as const);
 
-  // 收集被强制出售的资产名称
-  const soldAssetNames: string[] = [];
+  const maritalAssets = player.assets.filter((a) => a.type === 'realEstate' || a.type === 'stock');
+  const mult = (asset: Asset) => discount * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
 
-  let newState = updatePlayer(state, playerIndex, (p) => {
-    const sellable = p.assets.filter((a) => a.type === 'realEstate' || a.type === 'stock');
-    const toSell = sellable.slice(0, Math.ceil(sellable.length / 2));
-    let cash = p.cash - cashToSpouse - legalFees;
-    let assets = [...p.assets];
+  let newState = state;
+  const soldIds = new Set<string>();
+  const keptIds = new Set<string>();
 
-    for (const asset of toSell) {
-      soldAssetNames.push(`${asset.name}（${getAssetTypeLabel(asset.type)}）`);
-      const mult = discount * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
-      let proceeds: number;
-      if (isStockLotAsset(asset)) {
-        proceeds = stockLotSellProceeds(asset, asset.shareHand ?? 0, mult, state.sectorMultiplier);
+  for (const asset of maritalAssets) {
+    const isRealEstate = asset.type === 'realEstate';
+    let grossProceeds = isRealEstate
+      ? calculateSellProceeds(asset, mult(asset), state.sectorMultiplier)
+      : stockLotSellProceeds(asset, asset.shareHand ?? 0, mult(asset), state.sectorMultiplier);
+
+    // 找到关联贷款本金
+    const securedLiabilities = player.liabilities.filter(l => l.securedAssetId === asset.id);
+    const mortgagePrincipal = securedLiabilities.reduce((sum, l) => sum + l.principal, 0);
+    const equity = Math.max(0, grossProceeds - mortgagePrincipal);
+    const spouseShare = Math.round(equity * 0.5);
+
+    if (isRealEstate && keepHouse) {
+      // 保留房产：从现金中支付配偶份额
+      keptIds.add(asset.id);
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        cash: Math.max(0, p.cash - spouseShare),
+      }));
+    } else {
+      // 卖房/卖股票
+      soldIds.add(asset.id);
+      if (isRealEstate) {
+        newState = updatePlayer(newState, playerIndex, (p) => {
+          const { netCash, updatedLiabilities } = settleAssetLoan(p, asset.id, grossProceeds, '离婚房贷差额');
+          const playerHalf = Math.round(netCash * 0.5);
+          return {
+            ...p,
+            cash: p.cash + playerHalf,
+            assets: p.assets.filter((a) => a.id !== asset.id),
+            liabilities: updatedLiabilities,
+          };
+        });
       } else {
-        proceeds = calculateSellProceeds(asset, mult, state.sectorMultiplier);
+        const playerHalf = Math.round(grossProceeds * 0.5);
+        newState = updatePlayer(newState, playerIndex, (p) => ({
+          ...p,
+          cash: p.cash + playerHalf,
+          assets: p.assets.filter((a) => a.id !== asset.id),
+        }));
       }
-      cash += proceeds;
-      assets = assets.filter((a) => a.id !== asset.id);
     }
+  }
 
-    return {
-      ...p,
-      cash: Math.max(0, cash),
-      assets,
-      marriageStatus: newStatus,
-      marriageHappiness: 0,
-      partnerSalary: 0,
-      divorceCount,
-      monthlyMarriageHappinessBoost: 0,
-      hasPregnancy: false,
-      pregnancyMonths: 0,
-      dinkTurns: 0,
-      familyIncome: undefined,
-      expenses: {
-        ...p.expenses,
-        medicalPregnancy: 0,
-        other: Math.max(0, p.expenses.other - marriageOverhead(p.cityId)),
-      },
-    };
-  });
+  // 统一处理婚姻状态变更、现金分割、律师费、支出调整
+  newState = updatePlayer(newState, playerIndex, (p) => ({
+    ...p,
+    cash: Math.max(0, p.cash - cashToSpouse - legalFees),
+    marriageStatus: newStatus,
+    marriageHappiness: 0,
+    partnerSalary: 0,
+    divorceCount,
+    monthlyMarriageHappinessBoost: 0,
+    hasPregnancy: false,
+    pregnancyMonths: 0,
+    dinkTurns: 0,
+    familyIncome: undefined,
+    expenses: {
+      ...p.expenses,
+      medicalPregnancy: 0,
+      other: Math.max(0, p.expenses.other - marriageOverhead(p.cityId)),
+    },
+  }));
 
   const statusNote =
     newStatus === 'ineligible'
@@ -556,20 +587,58 @@ function executeDivorce(state: GameState, playerIndex: number): GameState {
       : settlement.isPostRemarriage
         ? '（再婚后再离，分割更严）'
         : '';
+  const sellOrKeep = keepHouse
+    ? `保留${keptIds.size}处房产`
+    : `出售${soldIds.size}处资产`;
   newState = addLog(
     newState,
     player.id,
-    `${player.name} 离婚：分割现金 ${Math.round((settlement.isPostRemarriage ? 0.6 : 0.5) * 100)}%、折价出售部分资产、律师费 ${legalFees} 元${statusNote}`,
+    `${player.name} 离婚：${sellOrKeep}，分割现金 ${Math.round((settlement.isPostRemarriage ? 0.6 : 0.5) * 100)}%、律师费 ${legalFees} 元${statusNote}`,
     'expense'
   );
   return {
     ...checkAndHandleBankruptcy(newState),
+    pendingDivorce: null,
+  };
+}
+
+/** 准备离婚待确认弹窗：计算共有财产明细，不执行任何分割 */
+function prepareDivorcePending(state: GameState, playerIndex: number): GameState {
+  const player = state.players[playerIndex];
+  const settlement = divorceSettlement(player);
+  const discount = settlement.forcedAssetDiscount;
+
+  const maritalAssets = player.assets.filter((a) => a.type === 'realEstate' || a.type === 'stock');
+  const assetInfos = maritalAssets.map((asset) => {
+    const mult = discount * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
+    const marketValue = Math.round(
+      asset.type === 'realEstate'
+        ? calculateSellProceeds(asset, mult, state.sectorMultiplier)
+        : stockLotSellProceeds(asset, asset.shareHand ?? 0, mult, state.sectorMultiplier)
+    );
+    const securedLiabilities = player.liabilities.filter(l => l.securedAssetId === asset.id);
+    const mortgagePrincipal = securedLiabilities.reduce((sum, l) => sum + l.principal, 0);
+    const equity = Math.max(0, marketValue - mortgagePrincipal);
+    return {
+      id: asset.id,
+      name: asset.name,
+      type: asset.type,
+      isSelfLiving: asset.type === 'realEstate' ? (asset.isSelfLiving ?? false) : false,
+      marketValue,
+      mortgagePrincipal,
+      equity,
+      spouseShare: Math.round(equity * 0.5),
+    };
+  });
+
+  return {
+    ...state,
     pendingDivorce: {
-      cashToSpouse,
-      legalFees,
+      cashToSpouse: settlement.cashToSpouse,
+      legalFees: settlement.legalFees,
       forcedAssetDiscount: discount,
       isPostRemarriage: settlement.isPostRemarriage ?? false,
-      soldAssetNames,
+      maritalAssets: assetInfos,
     },
   };
 }
@@ -1063,27 +1132,36 @@ function executeBuyAsset(
   }
 
   if (finalAsset.mortgage > 0) {
-    const mortgageDebtType =
-      finalAsset.type === 'realEstate'
-        ? getRealEstateMortgageDebtType(player, finalAsset)
-        : 'bankBusinessLoan';
+    // 如果玩家有足够现金，允许全款支付跳过强制贷款
+    const currentPlayer = newState.players[playerIndex];
+    if (currentPlayer.cash >= finalAsset.mortgage) {
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        cash: p.cash - finalAsset.mortgage,
+      }));
+    } else {
+      const mortgageDebtType =
+        finalAsset.type === 'realEstate'
+          ? getRealEstateMortgageDebtType(player, finalAsset)
+          : 'bankBusinessLoan';
 
-    newState = updatePlayer(newState, playerIndex, (p) => ({
-      ...p,
-      liabilities: [
-        ...p.liabilities,
-        {
-          id: generateId(),
-          ...createLiability({
-            name: `${finalAsset.name} 抵押贷款`,
-            principal: finalAsset.mortgage,
-            debtType: mortgageDebtType,
-            source: 'game',
-          }),
-          securedAssetId: newAssetId,
-        },
-      ],
-    }));
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        liabilities: [
+          ...p.liabilities,
+          {
+            id: generateId(),
+            ...createLiability({
+              name: `${finalAsset.name} 抵押贷款`,
+              principal: finalAsset.mortgage,
+              debtType: mortgageDebtType,
+              source: 'game',
+            }),
+            securedAssetId: newAssetId,
+          },
+        ],
+      }));
+    }
   }
 
   const lotInfo = isStockLotAsset(finalAsset) ? `（${finalAsset.shareHand} 手）` : '';
@@ -1830,7 +1908,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         position: newPos,
         charityTurns: Math.max(0, p.charityTurns - 1),
       }));
-      newState = { ...newState, pendingDice: null, currentCard: null, promotionOffer: null, careerEvent: null, pendingSettlement: null, pendingDivorce: null };
+      newState = { ...newState, pendingDice: null, currentCard: null, promotionOffer: null, careerEvent: null, pendingSettlement: null };
 
       newState = advanceOneMonth(newState, playerIndex);
       newState = handlePayday(newState, playerIndex);
@@ -1844,6 +1922,12 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       if (newState.pendingLifeEvent === 'retirement') {
         return { ...newState, phase: 'CARD_DECISION', currentCard: null };
       }
+
+      // 离婚弹窗优先于格子处理
+      if (newState.pendingDivorce) {
+        return { ...newState, phase: 'CARD_DECISION', currentCard: null, pendingDivorce: newState.pendingDivorce };
+      }
+      newState = { ...newState, pendingDivorce: null };
 
       const space = state.spaces[newPos];
       const currentPlayer = newState.players[playerIndex];
@@ -2234,11 +2318,14 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
           }));
           newState = addLog(newState, player.id, `${player.name} 忽视婚姻危机，幸福度 -5`, 'system');
           if (Math.random() < 0.15) {
-            newState = executeDivorce(newState, playerIndex);
+            newState = prepareDivorcePending(newState, playerIndex);
           }
         }
       }
       newState = checkAndHandleBankruptcy(newState);
+      if (newState.pendingDivorce) {
+        return { ...newState, phase: 'CARD_DECISION', currentCard: null };
+      }
       return { ...newState, phase: 'TURN_END', currentCard: null };
     }
 
@@ -2368,7 +2455,9 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
           payCareerCost(cost, '升迁培训/社交费');
           newState = updatePlayer(newState, playerIndex, (p) => {
             const newSalary = Math.round(p.salary * (1 + boostPct));
-            const happinessBoost = calcMarriageHappinessBySalary(newSalary);
+            const passiveIncome = getPassiveIncome(p, state.cashFlowMultiplier, state.sectorMultiplier);
+            const city = getCityById(p.cityId);
+            const happinessBoost = calcMarriageHappinessBySalary(newSalary, passiveIncome, city.expenseMultiplier);
             const promoCount = (p.promotionCount ?? p.promotionLevel ?? 0) + 1;
             return {
               ...p,
@@ -2457,7 +2546,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
             'expense'
           );
           if (player.marriageStatus === 'married' && Math.random() < 0.25) {
-            newState = executeDivorce(newState, playerIndex);
+            newState = prepareDivorcePending(newState, playerIndex);
           }
           break;
         }
@@ -2512,6 +2601,9 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       }
 
       newState = checkAndHandleBankruptcy(newState);
+      if (newState.pendingDivorce) {
+        return { ...newState, ...clearCareer, phase: 'CARD_DECISION', currentCard: null };
+      }
       return { ...newState, ...clearCareer };
     }
 
@@ -2768,7 +2860,8 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
     }
 
     case 'CONFIRM_DIVORCE': {
-      return { ...state, pendingDivorce: null };
+      const keepHouse = action.payload.keepHouse;
+      return executeDivorce(state, playerIndex, keepHouse);
     }
 
     case 'END_TURN': {

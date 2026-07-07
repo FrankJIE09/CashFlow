@@ -72,7 +72,11 @@ export function PlayerPanel() {
   const yearsToRetire = getYearsToRetirement(selectedPlayer);
   const marriageSalaryBonus =
     selectedPlayer.marriageStatus === 'married'
-      ? calcMarriageHappinessBySalary(selectedPlayer.salary)
+      ? calcMarriageHappinessBySalary(
+          selectedPlayer.salary,
+          getPassiveIncome(selectedPlayer, state.cashFlowMultiplier, state.sectorMultiplier),
+          city.expenseMultiplier
+        )
       : 0;
   const emergencyReserve = calcEmergencyReserveMonths(
     selectedPlayer,
@@ -200,7 +204,7 @@ export function PlayerPanel() {
             </div>
             {selectedPlayer.marriageStatus === 'married' && marriageSalaryBonus > 0 && (
               <div className={styles.hintLine}>
-                💑 薪资幸福加成约 +{marriageSalaryBonus}/月（floor(月薪/1000)，上限8）
+                💑 收入幸福加成约 +{marriageSalaryBonus}/月（含被动收入，按城市生活成本折算，上限20）
               </div>
             )}
           </div>

@@ -509,7 +509,17 @@ export interface GameState {
     legalFees: number;
     forcedAssetDiscount: number;
     isPostRemarriage: boolean;
-    soldAssetNames: string[];
+    /** 婚姻共有资产列表 */
+    maritalAssets: Array<{
+      id: string;
+      name: string;
+      type: AssetType;
+      isSelfLiving: boolean;
+      marketValue: number;
+      mortgagePrincipal: number; // 房产的剩余贷款本金，0 for 股票
+      equity: number; // marketValue - mortgagePrincipal
+      spouseShare: number; // 配偶应得的一半净值
+    }>;
   } | null;
   /** 【新增】v3.5 月现金流结算弹窗（负现金流时提示变卖/贷款） */
   pendingCashFlowSettlement?: { cashFlow: number } | null;
@@ -580,7 +590,7 @@ export type GameAction =
   | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
   | { type: 'LIQUIDATE_ASSET'; payload: { assetId: string; isSecretSell: boolean } }
   | { type: 'CONFIRM_CASH_FLOW_SETTLEMENT' }
-  | { type: 'CONFIRM_DIVORCE' }
+  | { type: 'CONFIRM_DIVORCE'; payload: { keepHouse: boolean } }
   | { type: 'DECLARE_BANKRUPTCY' }
   | { type: 'MANUAL_SELL_STOCK'; payload: { assetId: string; sellHand: number } }
   | { type: 'STOP_AUTO_TEST' }

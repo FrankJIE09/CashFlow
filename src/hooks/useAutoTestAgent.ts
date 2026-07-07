@@ -123,6 +123,11 @@ export function useAutoTestAgent() {
 
         if (state.pendingLifeEvent === 'retirement') {
           actions.confirmRetirement();
+        } else if (state.pendingDivorce) {
+          // 能负担折价款则保留房产，否则卖房分割
+          const totalSpouseShare = state.pendingDivorce.maritalAssets.reduce((s, a) => s + a.spouseShare, 0);
+          const canAfford = player.cash >= totalSpouseShare + state.pendingDivorce.cashToSpouse + state.pendingDivorce.legalFees;
+          actions.confirmDivorce(canAfford);
         } else if (space.type === 'settlement' && state.pendingSettlement) {
           actions.confirmSettlement();
         } else if (space.type === 'promotion' && state.careerEvent) {

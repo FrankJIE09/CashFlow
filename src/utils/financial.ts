@@ -209,9 +209,15 @@ export function calcElderlyMedicalExpense(cityId?: string): number {
   return Math.round(1500 * mult);
 }
 
-/** 【新增】v3.2 婚姻幸福度与薪资联动（月薪越高，家庭越稳） */
-export function calcMarriageHappinessBySalary(salary: number): number {
-  return Math.min(8, Math.floor(salary / 1000));
+/** 【新增】v3.2 婚姻幸福度与收入及城市联动（总收入越高、生活成本越低，家庭越稳） */
+export function calcMarriageHappinessBySalary(
+  salary: number,
+  passiveIncome: number,
+  expenseMultiplier: number
+): number {
+  const totalIncome = salary + passiveIncome;
+  const effectiveIncome = totalIncome / expenseMultiplier;
+  return Math.min(20, Math.floor(effectiveIncome / 1000));
 }
 
 /** 【新增】v3.2 距离退休年数（无强制退休返回 null） */
