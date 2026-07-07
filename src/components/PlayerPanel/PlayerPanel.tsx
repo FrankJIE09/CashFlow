@@ -87,6 +87,7 @@ export function PlayerPanel() {
           state.sectorMultiplier
         )
       : 0;
+  const promoLevel = selectedPlayer.promotionLevel ?? selectedPlayer.promotionCount ?? 0;
 
   return (
     <div className={`${styles.panel} cartoon-card`}>
@@ -179,9 +180,9 @@ export function PlayerPanel() {
               {selectedPlayer.isRetired && (
                 <span className={`${styles.badge} ${styles.retired}`}>🏖️ 已退休</span>
               )}
-              {(selectedPlayer.promotionLevel ?? 0) > 0 && (
+              {promoLevel > 0 && (
                 <span className={`${styles.badge} ${styles.promotion}`}>
-                  🎖️ 升迁 Lv.{selectedPlayer.promotionLevel}
+                  🎖️ 升迁 Lv.{promoLevel}
                 </span>
               )}
             </div>

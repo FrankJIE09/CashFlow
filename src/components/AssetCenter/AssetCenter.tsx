@@ -101,6 +101,16 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
     const cfSectorMult = asset.metadata?.sector ? (state.sectorMultiplier[asset.metadata.sector] ?? 1) : 1;
     const hasCfMult = cfTypeMult !== 1 || cfSectorMult !== 1;
 
+    // 自住房：找到关联的房贷月供，并在显示中体现
+    const selfLivingMortgage = asset.type === 'realEstate' && asset.isSelfLiving
+      ? player.liabilities.find(l =>
+          (l.debtType === 'houseFirst' || l.debtType === 'houseSecond') &&
+          (l.securedAssetId === asset.id || l.securedAssetId === undefined)
+        )
+      : null;
+    const mortgagePayment = selfLivingMortgage ? selfLivingMortgage.monthlyPayment : 0;
+    const netCF = asset.type === 'realEstate' && asset.isSelfLiving ? actualCF - mortgagePayment : actualCF;
+
     // 证券类资产价格信息
     let priceInfo: React.ReactNode = null;
     if (stockLike) {
@@ -160,7 +170,7 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
           </div>
           {priceInfo}
           <div className={styles.assetMeta}>
-            市值 {marketValue.toLocaleString()} 元 | 月现金流 +{actualCF} 元{hasCfMult ? `（基础 ${asset.cashFlow} × 类型${cfTypeMult.toFixed(2)}${cfSectorMult !== 1 ? ` × 行业${cfSectorMult.toFixed(2)}` : ''}）` : ''}
+            市值 {marketValue.toLocaleString()} 元 | 月现金流 {netCF >= 0 ? '+' : ''}{netCF.toLocaleString()} 元{hasCfMult ? `（基础 ${asset.cashFlow} × 类型${cfTypeMult.toFixed(2)}${cfSectorMult !== 1 ? ` × 行业${cfSectorMult.toFixed(2)}` : ''}` : ''}{selfLivingMortgage ? `，月供 ${mortgagePayment.toLocaleString()} 元` : ''}{hasCfMult ? '）' : ''}
           </div>
         </div>
         <div className={styles.assetActions}>

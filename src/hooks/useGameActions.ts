@@ -140,6 +140,10 @@ export function useGameActions() {
     dispatch({ type: 'CONFIRM_CASH_FLOW_SETTLEMENT' });
   }, [dispatch]);
 
+  const confirmDivorce = useCallback(() => {
+    dispatch({ type: 'CONFIRM_DIVORCE' });
+  }, [dispatch]);
+
   const sellStockManually = useCallback((assetId: string, sellHand: number) => {
     dispatch({ type: 'MANUAL_SELL_STOCK', payload: { assetId, sellHand } });
   }, [dispatch]);
@@ -177,6 +181,7 @@ export function useGameActions() {
     declareBankruptcy,
     liquidateAsset,
     confirmCashFlowSettlement,
+    confirmDivorce,
     sellStockManually,
     setRentTier,
   };

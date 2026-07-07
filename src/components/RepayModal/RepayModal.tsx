@@ -27,7 +27,6 @@ export function RepayModal({ player, onClose, initialLiability = null, nested = 
 
   const [repayTarget, setRepayTarget] = useState<Liability | null>(() => {
     if (initialLiability && initialLiability.principal > 0) return initialLiability;
-    if (repayableLiabilities.length === 1) return repayableLiabilities[0];
     return null;
   });
   const [repayAmount, setRepayAmount] = useState<number>(0);

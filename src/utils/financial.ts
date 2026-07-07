@@ -1157,8 +1157,8 @@ export function canAffordStockLots(player: Player, asset: Asset, lots: number): 
 export function canPurchaseOpportunity(
   player: Player,
   card: OpportunityCard,
-  marketMultiplier: Record<AssetType, number>,
-  sectorMultiplier: Record<string, number> = {}
+  _marketMultiplier: Record<AssetType, number>,
+  _sectorMultiplier: Record<string, number> = {}
 ): { allowed: boolean; reason?: string } {
   if (card.minCashRequired && player.cash < card.minCashRequired) {
     return { allowed: false, reason: `需要现金 ≥ ${card.minCashRequired.toLocaleString()} 元` };

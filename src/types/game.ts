@@ -503,6 +503,14 @@ export interface GameState {
   pendingSettlement?: { amount: number; isAnnual: boolean } | null;
   /** 【新增】v3.5 强制资产变卖（现金耗尽且月现金流为负） */
   pendingLiquidation?: boolean;
+  /** 【新增】v3.9 离婚待确认通知 */
+  pendingDivorce?: {
+    cashToSpouse: number;
+    legalFees: number;
+    forcedAssetDiscount: number;
+    isPostRemarriage: boolean;
+    soldAssetNames: string[];
+  } | null;
   /** 【新增】v3.5 月现金流结算弹窗（负现金流时提示变卖/贷款） */
   pendingCashFlowSettlement?: { cashFlow: number } | null;
   /** 【新增】v3.3 自动测试模式 */
@@ -572,6 +580,7 @@ export type GameAction =
   | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
   | { type: 'LIQUIDATE_ASSET'; payload: { assetId: string; isSecretSell: boolean } }
   | { type: 'CONFIRM_CASH_FLOW_SETTLEMENT' }
+  | { type: 'CONFIRM_DIVORCE' }
   | { type: 'DECLARE_BANKRUPTCY' }
   | { type: 'MANUAL_SELL_STOCK'; payload: { assetId: string; sellHand: number } }
   | { type: 'STOP_AUTO_TEST' }

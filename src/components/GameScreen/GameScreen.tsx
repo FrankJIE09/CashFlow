@@ -6,6 +6,7 @@ import { LogPanel } from '../LogPanel/LogPanel';
 import { CardModal } from '../CardModal/CardModal';
 import { LiquidateModal } from '../LiquidateModal/LiquidateModal';
 import { CashFlowSettlementModal } from '../CashFlowSettlementModal/CashFlowSettlementModal';
+import { DivorceModal } from '../DivorceModal/DivorceModal';
 import { WinScreen } from '../WinScreen/WinScreen';
 import { SoundEffects } from '../SoundEffects/SoundEffects';
 import { RentModal } from '../RentModal/RentModal';
@@ -65,6 +66,7 @@ export function GameScreen() {
       <CardModal />
       <LiquidateModal />
       <CashFlowSettlementModal />
+      <DivorceModal />
       <WinScreen />
       <SoundEffects />
       {state.testMode && <AutoTestPanel />}

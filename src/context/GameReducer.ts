@@ -507,6 +507,9 @@ function executeDivorce(state: GameState, playerIndex: number): GameState {
   const divorceCount = (player.divorceCount ?? 0) + 1;
   const newStatus = divorceCount >= 2 ? ('ineligible' as const) : ('divorced' as const);
 
+  // 收集被强制出售的资产名称
+  const soldAssetNames: string[] = [];
+
   let newState = updatePlayer(state, playerIndex, (p) => {
     const sellable = p.assets.filter((a) => a.type === 'realEstate' || a.type === 'stock');
     const toSell = sellable.slice(0, Math.ceil(sellable.length / 2));
@@ -514,6 +517,7 @@ function executeDivorce(state: GameState, playerIndex: number): GameState {
     let assets = [...p.assets];
 
     for (const asset of toSell) {
+      soldAssetNames.push(`${asset.name}（${getAssetTypeLabel(asset.type)}）`);
       const mult = discount * getAssetPriceMultiplier(asset, state.marketMultiplier, state.sectorMultiplier);
       let proceeds: number;
       if (isStockLotAsset(asset)) {
@@ -558,7 +562,16 @@ function executeDivorce(state: GameState, playerIndex: number): GameState {
     `${player.name} 离婚：分割现金 ${Math.round((settlement.isPostRemarriage ? 0.6 : 0.5) * 100)}%、折价出售部分资产、律师费 ${legalFees} 元${statusNote}`,
     'expense'
   );
-  return checkAndHandleBankruptcy(newState);
+  return {
+    ...checkAndHandleBankruptcy(newState),
+    pendingDivorce: {
+      cashToSpouse,
+      legalFees,
+      forcedAssetDiscount: discount,
+      isPostRemarriage: settlement.isPostRemarriage ?? false,
+      soldAssetNames,
+    },
+  };
 }
 
 function updatePlayer(state: GameState, index: number, updater: (player: Player) => Player): GameState {
@@ -1817,7 +1830,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         position: newPos,
         charityTurns: Math.max(0, p.charityTurns - 1),
       }));
-      newState = { ...newState, pendingDice: null, currentCard: null, promotionOffer: null, careerEvent: null, pendingSettlement: null };
+      newState = { ...newState, pendingDice: null, currentCard: null, promotionOffer: null, careerEvent: null, pendingSettlement: null, pendingDivorce: null };
 
       newState = advanceOneMonth(newState, playerIndex);
       newState = handlePayday(newState, playerIndex);
@@ -2752,6 +2765,10 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
     case 'CONFIRM_CASH_FLOW_SETTLEMENT': {
       const hasPendingCard = state.currentCard || state.pendingLiquidation;
       return { ...state, pendingCashFlowSettlement: null, phase: hasPendingCard ? 'CARD_DECISION' : 'TURN_END' };
+    }
+
+    case 'CONFIRM_DIVORCE': {
+      return { ...state, pendingDivorce: null };
     }
 
     case 'END_TURN': {
