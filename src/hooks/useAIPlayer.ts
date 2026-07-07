@@ -9,7 +9,7 @@ import {
   getMonthlyCashFlow,
   getSellableAssets,
   isStockLotAsset,
-  liquidateAssetConsent,
+  liquidateAsset,
   previewRepayment,
   stockLotBuyCost,
 } from '../utils/financial';
@@ -132,7 +132,7 @@ export function useAIPlayer() {
             const worst = sellable.reduce((prev, curr) =>
               curr.cashFlow < prev.cashFlow ? curr : prev
             );
-            actions.liquidateAsset(worst.id, false);
+            actions.liquidateAsset(worst.id);
           }
           return;
         }
@@ -248,11 +248,11 @@ export function useAIPlayer() {
           const sellable = getSellableAssets(player);
           if (sellable.length > 0) {
             const best = sellable.reduce((prev, curr) => {
-              const prevProceeds = liquidateAssetConsent(prev, state.marketMultiplier, state.sectorMultiplier).proceeds;
-              const currProceeds = liquidateAssetConsent(curr, state.marketMultiplier, state.sectorMultiplier).proceeds;
+              const prevProceeds = liquidateAsset(prev, state.marketMultiplier, state.sectorMultiplier).proceeds;
+              const currProceeds = liquidateAsset(curr, state.marketMultiplier, state.sectorMultiplier).proceeds;
               return currProceeds > prevProceeds ? curr : prev;
             });
-            actions.liquidateAsset(best.id, false);
+            actions.liquidateAsset(best.id);
             return;
           }
           actions.takeLoan(Math.abs(player.cash) + 1000);

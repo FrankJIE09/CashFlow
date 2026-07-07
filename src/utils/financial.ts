@@ -254,7 +254,6 @@ export function getDivorceProbability(player: Player): number {
   if ((player.consecutiveUnemployedTurns ?? 0) >= 4 && (player.dinkTurns ?? 0) > 0) {
     prob = Math.max(prob, 0.1) * 2;
   }
-  if (player.hasSecretLiquidation) prob = Math.max(prob, 0.25);
   return prob;
 }
 
@@ -275,14 +274,14 @@ export interface DivorceSettlementResult {
   isPostRemarriage?: boolean;
 }
 
-/** 【新增】v3.1 离婚财产分割估算；再婚后再离分割比例更高；私自变卖后再离 40% */
+/** 【新增】v3.1 离婚财产分割估算 */
 export function divorceSettlement(player: Player): DivorceSettlementResult {
   const isPostRemarriage = (player.marriageCount ?? 0) >= 2;
-  const cashSplitRatio = player.hasSecretLiquidation ? 0.4 : isPostRemarriage ? 0.6 : 0.5;
+  const cashSplitRatio = isPostRemarriage ? 0.6 : 0.5;
   return {
     cashToSpouse: Math.round(player.cash * cashSplitRatio),
     legalFees: divorceLegalFees(player.cityId, isPostRemarriage),
-    forcedAssetDiscount: player.hasSecretLiquidation ? 0.6 : isPostRemarriage ? 0.65 : 0.7,
+    forcedAssetDiscount: isPostRemarriage ? 0.65 : 0.7,
     isPostRemarriage,
   };
 }
@@ -1006,27 +1005,16 @@ export function shouldHalveUnemploymentPenalty(
 export interface LiquidationResult {
   proceeds: number;
   happinessDelta: number;
-  isSecret: boolean;
 }
 
-/** 【新增】v3.5 协商变卖：70% 市价，幸福度 -10 */
-export function liquidateAssetConsent(
+/** 强制变卖：70% 市价，幸福度 -20 */
+export function liquidateAsset(
   asset: Asset,
   marketMultiplier: Record<AssetType, number>,
   sectorMultiplier: Record<string, number> = {}
 ): LiquidationResult {
   const marketValue = getAssetMarketValue(asset, marketMultiplier[asset.type], sectorMultiplier);
-  return { proceeds: Math.round(marketValue * 0.7), happinessDelta: -10, isSecret: false };
-}
-
-/** 【新增】v3.5 私自变卖：50% 市价，幸福度 -30，高离婚风险 */
-export function liquidateAssetSecret(
-  asset: Asset,
-  marketMultiplier: Record<AssetType, number>,
-  sectorMultiplier: Record<string, number> = {}
-): LiquidationResult {
-  const marketValue = getAssetMarketValue(asset, marketMultiplier[asset.type], sectorMultiplier);
-  return { proceeds: Math.round(marketValue * 0.5), happinessDelta: -30, isSecret: true };
+  return { proceeds: Math.round(marketValue * 0.7), happinessDelta: -20 };
 }
 
 /** 【新增】v3.5 计算失业幸福度惩罚 */
@@ -1245,6 +1233,35 @@ export const SECTOR_BASE_PE: Record<string, number> = {
   '宽基': 15,
 };
 
+/** 各行业/资产类型年化增长率（用于 intrinsicPrice 月度复利） */
+export const SECTOR_YEARLY_GROWTH: Record<string, number> = {
+  '科技': 0.12,
+  '新能源': 0.12,
+  '消费': 0.10,
+  '先进制造': 0.10,
+  '宽基': 0.08,
+  '文化': 0.08,
+  '餐饮': 0.08,
+  '零售': 0.08,
+  '酒店': 0.07,
+  '金融': 0.06,
+  '有色金属': 0.06,
+  '能源': 0.05,
+  '公用事业': 0.05,
+  '汽车': 0.05,
+  '农产品': 0.05,
+  '住宅': 0.04,
+  '商业地产': 0.04,
+  'REITs': 0.04,
+  '物流地产': 0.04,
+  '贵金属': 0.03,
+  '利率债': 0,
+  '信用债': 0,
+};
+
+/** 通用通胀率（大宗商品用） */
+export const INFLATION_RATE = 0.03;
+
 /** 估值带（基于 现价 vs 合理价值） */
 export type ValuationBand = 'deepUndervalue' | 'undervalue' | 'fair' | 'overvalue';
 
@@ -1288,6 +1305,71 @@ export function getStockBasePe(asset: Asset): number {
   const sector = asset.metadata?.sector;
   if (sector && SECTOR_BASE_PE[sector]) return SECTOR_BASE_PE[sector];
   return 15;
+}
+
+/** 获取资产年化增长率（基于类型+行业） */
+export function getAssetYearlyGrowthRate(asset: Asset): number {
+  if (asset.type === 'bond' || asset.type === 'derivative') return 0;
+  if (asset.type === 'commodity') return INFLATION_RATE;
+  const sector = asset.metadata?.sector;
+  if (sector && SECTOR_YEARLY_GROWTH[sector] != null) return SECTOR_YEARLY_GROWTH[sector];
+  if (asset.type === 'reit') return 0.04;
+  if (asset.type === 'stock' || asset.type === 'overseas') return 0.08;
+  return 0;
+}
+
+/**
+ * 月度 intrinsicPrice 增长 + 同步 PB/股息率
+ * 权益类/REITs：intrinsicPrice × (1+年化)^(1/12)
+ * 大宗商品：marketValue × (1+通胀)^(1/12)
+ */
+export function applyMonthlyIntrinsicGrowth(asset: Asset): Asset {
+  const rate = getAssetYearlyGrowthRate(asset);
+  if (rate <= 0) return asset;
+
+  const monthlyGrowth = (1 + rate) ** (1 / 12);
+
+  if (asset.type === 'stock' || asset.type === 'overseas') {
+    const oldIntrinsic = asset.intrinsicPrice ?? 0;
+    if (oldIntrinsic <= 0) return asset;
+    const newIntrinsic = Math.round(oldIntrinsic * monthlyGrowth * 100) / 100;
+
+    const basePe = getStockBasePe(asset);
+    const currentPe = asset.currentPe ?? basePe;
+    const oldPrice = (oldIntrinsic * currentPe) / basePe;
+    const newPrice = (newIntrinsic * currentPe) / basePe;
+
+    let modified: Asset = { ...asset, intrinsicPrice: newIntrinsic };
+
+    const currentPb = asset.metadata?.pb;
+    if (currentPb != null && oldPrice > 0) {
+      const newPb = Math.round((currentPb * newPrice / oldPrice) * 100) / 100;
+      modified = { ...modified, metadata: { ...(modified.metadata ?? {}), pb: newPb } };
+    }
+    const yearDiv = asset.yearDivPerShare ?? 0;
+    if (yearDiv > 0 && newPrice > 0) {
+      const newDivYield = Math.round((yearDiv / newPrice) * 10000) / 10000;
+      modified = { ...modified, metadata: { ...(modified.metadata ?? {}), dividendYield: newDivYield } };
+    }
+    return modified;
+  }
+
+  if (asset.type === 'reit') {
+    const oldIntrinsic = asset.intrinsicPrice ?? 0;
+    if (oldIntrinsic > 0) {
+      return { ...asset, intrinsicPrice: Math.round(oldIntrinsic * monthlyGrowth * 100) / 100 };
+    }
+    return asset;
+  }
+
+  if (asset.type === 'commodity') {
+    const newMV = Math.round(asset.marketValue * monthlyGrowth);
+    const ratio = newMV / Math.max(asset.marketValue, 1);
+    const newCF = Math.round((asset.cashFlow ?? 0) * ratio);
+    return { ...asset, marketValue: newMV, cashFlow: newCF };
+  }
+
+  return asset;
 }
 
 /**

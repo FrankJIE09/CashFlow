@@ -25,8 +25,7 @@ import {
   hasSellableAssets,
   inferDebtTypeFromLiability,
   isStockLotAsset,
-  liquidateAssetConsent,
-  liquidateAssetSecret,
+  liquidateAsset,
   getRentExpense,
   calcCurrentStockPrice,
   judgeStockValuation,
@@ -278,11 +277,8 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                 )}
                 {player.assets.map((asset) => {
                   const canLiquidate = sellableAssets.some((a) => a.id === asset.id);
-                  const consent = canLiquidate
-                    ? liquidateAssetConsent(asset, state.marketMultiplier, state.sectorMultiplier)
-                    : null;
-                  const secret = canLiquidate
-                    ? liquidateAssetSecret(asset, state.marketMultiplier, state.sectorMultiplier)
+                  const liquidationInfo = canLiquidate
+                    ? liquidateAsset(asset, state.marketMultiplier, state.sectorMultiplier)
                     : null;
 
                   // v3.6 PE 显示（仅限股票类资产）
@@ -342,16 +338,9 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                           <button
                             type="button"
                             className={`${styles.liquidateBtn} cartoon-button`}
-                            onClick={() => actions.liquidateAsset(asset.id, false)}
+                            onClick={() => actions.liquidateAsset(asset.id)}
                           >
-                            协商变卖 {formatCurrency(consent!.proceeds)}
-                          </button>
-                          <button
-                            type="button"
-                            className={`${styles.liquidateBtnSecret} cartoon-button`}
-                            onClick={() => actions.liquidateAsset(asset.id, true)}
-                          >
-                            私自变卖 {formatCurrency(secret!.proceeds)}
+                            变卖 {formatCurrency(liquidationInfo!.proceeds)}
                           </button>
                         </div>
                       )}

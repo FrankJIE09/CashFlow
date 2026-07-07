@@ -132,8 +132,8 @@ export function useGameActions() {
     dispatch({ type: 'DECLARE_BANKRUPTCY' });
   }, [dispatch]);
 
-  const liquidateAsset = useCallback((assetId: string, isSecretSell: boolean) => {
-    dispatch({ type: 'LIQUIDATE_ASSET', payload: { assetId, isSecretSell } });
+  const liquidateAsset = useCallback((assetId: string) => {
+    dispatch({ type: 'LIQUIDATE_ASSET', payload: { assetId } });
   }, [dispatch]);
 
   const confirmCashFlowSettlement = useCallback(() => {

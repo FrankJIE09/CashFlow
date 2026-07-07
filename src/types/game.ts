@@ -305,8 +305,6 @@ export interface Player {
   consecutiveUnemployedTurns?: number;
   /** 【新增】v3.5 再就业后幸福度疤痕剩余回合 */
   postEmploymentScarTurnsRemaining?: number;
-  /** 【新增】v3.5 私自变卖资产标记（离婚分割 40%） */
-  hasSecretLiquidation?: boolean;
   /** 【新增】v3.4 职业转型进度 */
   careerTransitionTurnsRemaining?: number;
   careerTransitionBaseSalary?: number;
@@ -588,7 +586,7 @@ export type GameAction =
   | { type: 'TAKE_LOAN'; payload: { amount: number } }
   | { type: 'REPAY_LIABILITY'; payload: { liabilityId: string; amount: number } }
   | { type: 'SELL_ASSET'; payload: { assetId: string; multiplier: number; shareHand?: number } }
-  | { type: 'LIQUIDATE_ASSET'; payload: { assetId: string; isSecretSell: boolean } }
+  | { type: 'LIQUIDATE_ASSET'; payload: { assetId: string } }
   | { type: 'CONFIRM_CASH_FLOW_SETTLEMENT' }
   | { type: 'CONFIRM_DIVORCE'; payload: { keepHouse: boolean } }
   | { type: 'DECLARE_BANKRUPTCY' }

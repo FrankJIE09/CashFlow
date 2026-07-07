@@ -31,8 +31,7 @@ import {
   isSellableAsset,
   isStockLotAsset,
   buildStockLotAsset,
-  liquidateAssetConsent,
-  liquidateAssetSecret,
+  liquidateAsset,
   needsLiquidation,
   normalizeLiability,
   syncExpenseOnRepay,
@@ -60,6 +59,7 @@ import {
   getStockBasePe,
   calcCurrentStockPrice,
   syncPbAndDivYieldOnPeChange,
+  applyMonthlyIntrinsicGrowth,
   getRentExpense,
 } from '../utils/financial';
 import { applyInsuranceDeductible } from '../utils/financial';
@@ -244,7 +244,7 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
         const newCF = Math.round((a.cashFlow ?? 0) * ratio);
         return { ...a, marketValue: newMV, cashFlow: newCF };
       }
-      return a;
+      return applyMonthlyIntrinsicGrowth(a);
     }),
   }));
 
@@ -1785,7 +1785,6 @@ function createPlayer(config: GameConfig, isAI: boolean, index: number, aiName?:
     careerTransitionTurnsRemaining: 0,
     consecutiveUnemployedTurns: 0,
     postEmploymentScarTurnsRemaining: 0,
-    hasSecretLiquidation: false,
     monthlyMarriageHappinessBoost: 0,
     partnerUnemployedTurnsRemaining: 0,
     tempPerChildBoost: 0,
@@ -2783,15 +2782,13 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
     }
 
     case 'LIQUIDATE_ASSET': {
-      const { assetId, isSecretSell } = action.payload;
+      const { assetId } = action.payload;
       const asset = player.assets.find((a) => a.id === assetId);
       if (!asset || !isSellableAsset(asset)) return state;
 
-      const liquidation = isSecretSell
-        ? liquidateAssetSecret(asset, state.marketMultiplier, state.sectorMultiplier)
-        : liquidateAssetConsent(asset, state.marketMultiplier, state.sectorMultiplier);
+      const liquidation = liquidateAsset(asset, state.marketMultiplier, state.sectorMultiplier);
 
-      // 【修正】v3.10 抵押资产变卖：先还贷再给净值
+      // 抵押资产变卖：先还贷再给净值
       const wasSelfLiving = asset.type === 'realEstate' && asset.isSelfLiving;
       let newState = updatePlayer(state, playerIndex, (p) => {
         const { netCash, updatedLiabilities } = settleAssetLoan(
@@ -2814,18 +2811,16 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
             p.marriageStatus === 'married'
               ? Math.max(0, p.marriageHappiness + liquidation.happinessDelta)
               : p.marriageHappiness,
-          hasSecretLiquidation: p.hasSecretLiquidation || liquidation.isSecret,
         };
       });
 
       const securedLoans = state.players[playerIndex].liabilities.filter(l => l.securedAssetId === assetId);
       const payOffAmt = securedLoans.reduce((s, l) => s + l.principal, 0);
       const netToPlayer = liquidation.proceeds - payOffAmt;
-      const modeLabel = isSecretSell ? '私自变卖' : '协商变卖';
       newState = addLog(
         newState,
         player.id,
-        `${player.name} ${modeLabel} ${asset.name}，变卖价 ${liquidation.proceeds} 元，还贷 ${payOffAmt} 元，净得 ${netToPlayer} 元，幸福度 ${liquidation.happinessDelta}`,
+        `${player.name} 强制变卖 ${asset.name}，变卖价 ${liquidation.proceeds} 元，还贷 ${payOffAmt} 元，净得 ${netToPlayer} 元，幸福度 ${liquidation.happinessDelta}`,
         'asset'
       );
 

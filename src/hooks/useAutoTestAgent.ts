@@ -111,7 +111,7 @@ export function useAutoTestAgent() {
         if (state.pendingLiquidation) {
           const sellable = getSellableAssets(player);
           if (sellable.length > 0) {
-            actions.liquidateAsset(sellable[0].id, false);
+            actions.liquidateAsset(sellable[0].id);
           }
           return;
         }
@@ -218,7 +218,7 @@ export function useAutoTestAgent() {
         if (player.cash < 0 && !checkBankruptcy(player, state.cashFlowMultiplier, state.sectorMultiplier)) {
           const sellable = getSellableAssets(player);
           if (sellable.length > 0) {
-            actions.liquidateAsset(sellable[0].id, false);
+            actions.liquidateAsset(sellable[0].id);
             return;
           }
           actions.takeLoan(Math.abs(player.cash) + 1000);
