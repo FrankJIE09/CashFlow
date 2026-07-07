@@ -251,10 +251,9 @@ export function CardModal() {
     }
 
     if (player.marriageStatus === 'married') {
-      // 已婚 → 育儿/怀孕事件
+      // 已婚 → 育儿决策
       const medical = pregnancyMedicalCost(player.cityId);
       const atLimit = player.children >= 3 && !player.hasPregnancy;
-      const h = player.marriageHappiness;
 
       if (player.hasPregnancy) {
         return (
@@ -262,13 +261,10 @@ export function CardModal() {
             <div className={styles.modal}>
               <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
               <h2 className={styles.title}>🤰 孕期管理</h2>
-              <p className={styles.description}>已怀孕 {player.pregnancyMonths ?? 0}/9 月，请选择后续方向：</p>
+              <p className={styles.description}>已怀孕 {player.pregnancyMonths ?? 0}/9 月。</p>
               <div className={styles.actions}>
-                <button className={styles.primaryButton} onClick={() => actions.choosePregnancyPath('postpone')}>
-                  继续孕期（推迟生育决策）
-                </button>
-                <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('dink')}>
-                  转 DINK（幸福度惩罚，离婚风险↑）
+                <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('postpone')}>
+                  推迟生育（幸福度 -5）
                 </button>
               </div>
             </div>
@@ -276,73 +272,24 @@ export function CardModal() {
         );
       }
 
-      if (h >= 70) {
-        return (
-          <div className={styles.overlay}>
-            <div className={styles.modal}>
-              <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>家庭状态 · 甜蜜</div>
-              <h2 className={styles.title}>💑 婚姻甜蜜期</h2>
-              <p className={styles.description}>幸福度 {h}，感情稳定，工资 +10% 加成生效中。</p>
-              <div className={styles.actions}>
-                <button className={styles.primaryButton} onClick={() => actions.resolveMarriageGrid()}>
-                  继续甜蜜生活（幸福度 +5）
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-      if (h >= 40) {
-        return (
-          <div className={styles.overlay}>
-            <div className={styles.modal}>
-              <div className={styles.cardType} style={{ backgroundColor: '#ffd9a0' }}>家庭状态 · 平淡</div>
-              <h2 className={styles.title}>💑 平淡日常</h2>
-              <p className={styles.description}>幸福度 {h}，需要继续经营家庭关系。</p>
-              <div className={styles.actions}>
-                <button className={styles.primaryButton} onClick={() => actions.resolveMarriageGrid()}>
-                  确认
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-      const counselingCost = Math.round(player.salary * 0.5);
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
-            <div className={styles.cardType} style={{ backgroundColor: '#ff6b6b' }}>家庭状态 · 危机</div>
-            <h2 className={styles.title}>💔 婚姻危机</h2>
-            <p className={styles.description}>幸福度仅 {h}，关系亮红灯。可投资婚姻咨询（{formatCurrency(counselingCost)}）或选择忽视。</p>
-            <p className={styles.description}>此外，你们也可以考虑生育计划：</p>
-            <div className={styles.actions}>
-              <button
-                className={styles.primaryButton}
-                onClick={() => actions.resolveMarriageGrid(true)}
-                disabled={player.cash + 50000 < counselingCost && player.cash < counselingCost}
-              >
-                婚姻咨询（{formatCurrency(counselingCost)}，幸福度 +15）
-              </button>
-              <button className={styles.secondaryButton} onClick={() => actions.resolveMarriageGrid(false)}>
-                忽视（幸福度 -5，可能离婚）
-              </button>
-            </div>
-            <hr className={styles.divider} />
-            <p className={styles.description}>生育计划（已婚可选）：</p>
+            <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>家庭格</div>
+            <h2 className={styles.title}>👶 生育计划</h2>
+            <p className={styles.description}>
+              当前已有 {player.children} 个孩子，幸福度 {player.marriageHappiness}。
+            </p>
             <div className={styles.actions}>
               <button
                 className={styles.primaryButton}
                 onClick={() => actions.choosePregnancyPath('plan')}
                 disabled={atLimit}
               >
-                计划怀孕（月医疗 +{formatCurrency(medical)}）
-              </button>
-              <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('dink')}>
-                DINK（幸福度惩罚）
+                {atLimit ? '已达子女上限' : `计划怀孕（月医疗 +${formatCurrency(medical)}）`}
               </button>
               <button className={styles.secondaryButton} onClick={() => actions.choosePregnancyPath('postpone')}>
-                推迟
+                推迟（幸福度 -5）
               </button>
             </div>
           </div>
@@ -605,6 +552,7 @@ export function CardModal() {
 
   if (card.type === 'doodad') {
     const isInsuranceCard = (card as any).insuranceType != null && (card as any).insuranceMonthlyPremium != null;
+    const isPartnerUnemployment = (card as any).partnerUnemploymentTurns != null && card.cost === 0;
     const shortfall = card.cost - player.cash;
     const canPay = player.cash >= card.cost;
     const canLoan = shortfall > 0;
@@ -621,6 +569,10 @@ export function CardModal() {
               <span className={styles.cost}>{formatCurrency((card as any).insuranceMonthlyPremium!)}</span>
               <div className={styles.recurringInfo}>无首付，确认后次月起每月自动扣缴</div>
             </div>
+          ) : isPartnerUnemployment ? (
+            <div className={styles.costInfo}>
+              <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>⚠ 无直接支出，但未来数月配偶工资归零，幸福度大幅降低</span>
+            </div>
           ) : (
             <div className={styles.costInfo}>
               <span>需要支付：</span>
@@ -631,17 +583,25 @@ export function CardModal() {
             <div className={styles.recurringInfo}>此外每月增加支出 {formatCurrency(card.monthlyCost)}</div>
           )}
           <div className={styles.actions}>
-            <button
-              className={styles.primaryButton}
-              onClick={actions.payDoodad}
-              disabled={!canPay && !canLoan && !isInsuranceCard}
-            >
-              {isInsuranceCard ? '确认投保' : canPay ? '支付' : `贷款支付 ${formatCurrency(shortfall)}`}
-            </button>
-            {isInsuranceCard && (
-              <button className={styles.secondaryButton} onClick={actions.declineCard}>
-                跳过
+            {isPartnerUnemployment ? (
+              <button className={styles.primaryButton} onClick={actions.payDoodad}>
+                确认
               </button>
+            ) : (
+              <>
+                <button
+                  className={styles.primaryButton}
+                  onClick={actions.payDoodad}
+                  disabled={!canPay && !canLoan && !isInsuranceCard}
+                >
+                  {isInsuranceCard ? '确认投保' : canPay ? '支付' : `贷款支付 ${formatCurrency(shortfall)}`}
+                </button>
+                {isInsuranceCard && (
+                  <button className={styles.secondaryButton} onClick={actions.declineCard}>
+                    跳过
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

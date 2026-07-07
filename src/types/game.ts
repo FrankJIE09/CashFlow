@@ -85,7 +85,7 @@ export interface CareerEvent {
 }
 
 /** 【新增】v3.1 生育路径选择 */
-export type PregnancyPath = 'plan' | 'dink' | 'postpone';
+export type PregnancyPath = 'plan' | 'postpone';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 

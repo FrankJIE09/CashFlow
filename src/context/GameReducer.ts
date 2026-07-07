@@ -382,6 +382,12 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
       partnerUnemployedTurnsRemaining: remaining,
     }));
     if (remaining <= 0) {
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        partnerUnemployedTurnsRemaining: 0,
+        // 清除 familyIncome 快照，让 getEffectiveSalary 重新完整计算
+        familyIncome: undefined,
+      }));
       newState = addLog(
         newState,
         afterUnemployment.id,
@@ -402,13 +408,6 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
     const delta = rollMarriageHappinessDelta() + salaryBonus + promoBoost;
     newState = updatePlayer(newState, playerIndex, (p) => {
       let happiness = Math.min(100, Math.max(0, p.marriageHappiness + delta));
-      let dinkTurns = p.dinkTurns ?? 0;
-      if (dinkTurns > 0) {
-        // 【v3.8】DINK 惩罚：女性额外 -5
-        const dinkPenalty = p.gender === 'female' ? 17 : 12;
-        happiness = Math.max(0, happiness - dinkPenalty);
-        dinkTurns += 1;
-      }
       // 【v3.8】女性持有0-3岁子嗣时月幸福度 -5
       if (p.gender === 'female' && p.childAges.length > 0) {
         happiness = Math.max(0, happiness - getChildHappinessPenalty(p.childAges.length));
@@ -418,7 +417,7 @@ function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameSt
       if (highDebtPenalty > 0) {
         happiness = Math.max(0, happiness - highDebtPenalty);
       }
-      return { ...p, marriageHappiness: happiness, dinkTurns, highDebtHappinessPenalty: highDebtPenalty };
+      return { ...p, marriageHappiness: happiness, highDebtHappinessPenalty: highDebtPenalty };
     });
 
     // 【v3.8】孕期处理（含性别差异化流产、产假、生育补贴）
@@ -2076,8 +2075,8 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
 
       // 【新增】v3.7 家庭身份校验（向后兼容 ID 白名单）
       const isChildExpense = ['family_school_choice', 'doodad_tutor', 'doodad_study_abroad'].includes(card.id ?? '');
-      if (isChildExpense && (player.children === 0 || (player.dinkTurns ?? 0) > 0)) {
-        return { ...addLog(state, player.id, `${player.name} 无子女或为丁克，跳过子女费用`, 'system'), phase: 'TURN_END', currentCard: null };
+      if (isChildExpense && player.children === 0) {
+        return { ...addLog(state, player.id, `${player.name} 无子女，跳过子女费用`, 'system'), phase: 'TURN_END', currentCard: null };
       }
       if (card.id === 'family_spouse_unemployed' && player.marriageStatus !== 'married') {
         return { ...addLog(state, player.id, `${player.name} 未婚，跳过配偶失业事件`, 'system'), phase: 'TURN_END', currentCard: null };
@@ -2139,6 +2138,8 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
           next = {
             ...next,
             partnerUnemployedTurnsRemaining: turns,
+            // 清除静态快照，让 getEffectiveSalary 回退到按字段实时计算
+            familyIncome: undefined,
           };
         }
 
@@ -2348,25 +2349,15 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
           `${player.name} 计划怀孕，月医疗支出 +${medical} 元`,
           'expense'
         );
-      } else if (path === 'dink') {
-        // 【v3.8】DINK 初始惩罚女性更大
-        const dinkPenalty = player.gender === 'female' ? 18 : 12;
+      } else {
         newState = updatePlayer(newState, playerIndex, (p) => ({
           ...p,
           hasPregnancy: false,
           pregnancyMonths: 0,
-          dinkTurns: 1,
           expenses: { ...p.expenses, medicalPregnancy: 0 },
-          marriageHappiness: Math.max(0, p.marriageHappiness - dinkPenalty),
+          marriageHappiness: Math.max(0, p.marriageHappiness - 5),
         }));
-        newState = addLog(
-          newState,
-          player.id,
-          `${player.name} 选择 DINK，幸福度 -${dinkPenalty}，离婚风险上升`,
-          'system'
-        );
-      } else {
-        newState = addLog(newState, player.id, `${player.name} 选择推迟生育`, 'system');
+        newState = addLog(newState, player.id, `${player.name} 选择推迟生育，幸福度 -5`, 'system');
       }
 
       newState = checkAndHandleBankruptcy(newState);

@@ -163,24 +163,18 @@ export function useAIPlayer() {
         } else if (space.type === 'family') {
           if (player.marriageStatus === 'ineligible') {
             actions.declineCard();
-          } else if (player.marriageStatus === 'married') {
+          } else           if (player.marriageStatus === 'married') {
             // 已婚 → 育儿逻辑
             if (player.hasPregnancy) {
               actions.choosePregnancyPath('postpone');
             } else {
               const cashFlow = getMonthlyCashFlow(player, state.cashFlowMultiplier, state.sectorMultiplier);
-              if (player.dinkTurns && player.dinkTurns > 0) {
-                actions.choosePregnancyPath(
-                  player.difficulty === 'hard' && Math.random() > 0.7 ? 'plan' : 'dink'
-                );
-              } else if (
+              if (
                 player.children < 3 &&
                 cashFlow > player.expenses.perChild * 2 &&
                 (player.difficulty === 'easy' ? Math.random() > 0.5 : cashFlow > player.expenses.perChild * 4)
               ) {
                 actions.choosePregnancyPath('plan');
-              } else if (player.difficulty === 'hard' && Math.random() > 0.6) {
-                actions.choosePregnancyPath('dink');
               } else {
                 actions.choosePregnancyPath('postpone');
               }

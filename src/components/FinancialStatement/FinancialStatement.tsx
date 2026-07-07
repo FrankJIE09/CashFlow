@@ -98,9 +98,15 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                 <span></span>
               </div>
             )}
-            {player.marriageStatus === 'married' && (player.partnerSalary ?? 0) > 0 && (
+            {player.marriageStatus === 'married' && (player.partnerSalary ?? 0) > 0 && (player.partnerUnemployedTurnsRemaining ?? 0) <= 0 && (
               <div className={styles.subRow}>
                 <span>└ 配偶工资 {formatCurrency(player.partnerSalary)}</span>
+                <span></span>
+              </div>
+            )}
+            {player.marriageStatus === 'married' && (player.partnerUnemployedTurnsRemaining ?? 0) > 0 && (
+              <div className={styles.subRow}>
+                <span>└ 配偶失业中，工资归零</span>
                 <span></span>
               </div>
             )}

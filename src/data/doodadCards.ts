@@ -83,7 +83,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
   {
     id: 'family_spouse_unemployed',
     title: '配偶失业',
-    description: '伴侣公司裁员，家庭收入骤降。',
+    description: '伴侣公司裁员，家庭收入骤降。未来数月配偶无法工作，失去配偶工资收入，幸福度大幅降低。',
     type: 'doodad',
     cost: 0,
     isRecurring: false,
