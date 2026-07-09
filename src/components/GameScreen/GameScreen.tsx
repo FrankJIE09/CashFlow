@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Board } from '../Board/Board';
 import { PlayerPanel } from '../PlayerPanel/PlayerPanel';
 import { ActionBar } from '../ActionBar/ActionBar';
@@ -9,7 +9,6 @@ import { CashFlowSettlementModal } from '../CashFlowSettlementModal/CashFlowSett
 import { DivorceModal } from '../DivorceModal/DivorceModal';
 import { WinScreen } from '../WinScreen/WinScreen';
 import { SoundEffects } from '../SoundEffects/SoundEffects';
-import { RentModal } from '../RentModal/RentModal';
 import { AssetCenter } from '../AssetCenter/AssetCenter';
 import { useAIPlayer } from '../../hooks/useAIPlayer';
 import { useAutoTestAgent } from '../../hooks/useAutoTestAgent';
@@ -22,33 +21,9 @@ export function GameScreen() {
   useAIPlayer();
   useAutoTestAgent();
 
-  const [showRentModal, setShowRentModal] = useState(false);
   const [showAssetCenter, setShowAssetCenter] = useState(false);
 
   const currentPlayer = state.players[state.currentPlayerIndex];
-
-  // 检测玩家是否有自住房
-  const hasSelfLiving = useMemo(() => {
-    if (!currentPlayer) return false;
-    if (state.phase === 'SETUP' || state.phase === 'GAME_OVER') return false;
-    if (currentPlayer.isBankrupt) return false;
-    return currentPlayer.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
-  }, [currentPlayer, state.phase]);
-
-  // 【修复】仅在「从有房变成无房」的瞬间弹出一次租房选择
-  const prevHasSelfLiving = useRef<boolean | null>(null);
-  useEffect(() => {
-    // 初始化时记录当前状态但不弹出
-    if (prevHasSelfLiving.current === null) {
-      prevHasSelfLiving.current = hasSelfLiving;
-      return;
-    }
-    // 从有房变为无房时弹出
-    if (prevHasSelfLiving.current === true && hasSelfLiving === false && !showRentModal) {
-      setShowRentModal(true);
-    }
-    prevHasSelfLiving.current = hasSelfLiving;
-  }, [hasSelfLiving]);
 
   return (
     <div className={styles.screen}>
@@ -77,12 +52,6 @@ export function GameScreen() {
       <WinScreen />
       <SoundEffects />
       {state.testMode && <AutoTestPanel />}
-      {showRentModal && currentPlayer && (
-        <RentModal
-          forced
-          onClose={() => setShowRentModal(false)}
-        />
-      )}
       {showAssetCenter && currentPlayer && (
         <AssetCenter
           player={currentPlayer}
