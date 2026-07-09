@@ -186,7 +186,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
   {
     id: 'insurance_medical',
     title: '医疗保险',
-    description: '为自己购买商业医疗保险，月缴费用享受大病报销。',
+    description: '商业医疗保险，月缴 ¥500。父母大病等医疗事件可报销 70%（免赔额 ¥2,000），减轻家庭医疗负担。',
     type: 'doodad',
     cost: 0,
     isRecurring: true,
@@ -195,19 +195,6 @@ export const DOODAD_CARDS: DoodadCard[] = [
     coverageRatio: 0.7,
     insuranceMonthlyPremium: 500,
     happinessDelta: 3,
-  },
-  {
-    id: 'insurance_dental',
-    title: '牙科保险',
-    description: '牙科专项保险，覆盖洗牙补牙等常规治疗。',
-    type: 'doodad',
-    cost: 0,
-    isRecurring: true,
-    monthlyCost: 200,
-    insuranceType: 'dental',
-    coverageRatio: 0.6,
-    insuranceMonthlyPremium: 200,
-    happinessDelta: 2,
   },
   {
     id: 'insurance_life',
