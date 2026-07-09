@@ -87,3 +87,57 @@
     order: -1;
   }
 }
+
+.deferredBanner {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 24px;
+  background: #FFF8E0;
+  border: 3px solid #DAA520;
+  border-radius: 20px;
+  box-shadow: 0 8px 0 rgba(218, 165, 32, 0.3), 0 12px 32px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 14px;
+  color: #8B6914;
+  animation: bannerPop 0.4s ease-out;
+  transition: all 0.15s;
+}
+
+.deferredBanner:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 0 rgba(218, 165, 32, 0.3), 0 16px 40px rgba(0, 0, 0, 0.2);
+  background: #FFEAA7;
+}
+
+.deferredBanner:active {
+  transform: translateY(4px);
+  box-shadow: 0 4px 0 rgba(218, 165, 32, 0.3);
+}
+
+.deferredLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #B8860B;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes bannerPop {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

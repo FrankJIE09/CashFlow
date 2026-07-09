@@ -1865,6 +1865,7 @@ function getInitialState(): GameState {
     },
     discardPiles: { opportunity: [], market: [], doodad: [] },
     currentCard: null,
+    deferredCard: null,
     marketMultiplier: createDefaultMultiplierRecord(),
     cashFlowMultiplier: createDefaultMultiplierRecord(),
     sectorMultiplier: {},
@@ -2058,7 +2059,8 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       let newState = result.state;
       const card = result.card;
       newState = addLog(newState, player.id, `${player.name} 抽到 ${card.title}`, cardType === 'market' ? 'market' : 'system');
-      return { ...newState, phase: 'CARD_DECISION' };
+      // 抽新卡时丢弃之前暂缓的卡片
+      return { ...newState, phase: 'CARD_DECISION', deferredCard: null };
     }
 
     case 'BUY_ASSET': {
@@ -3071,6 +3073,16 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
 
     case 'DCA_WARNING_DISMISS':
       return state;
+
+    case 'DEFER_CARD': {
+      if (!state.currentCard) return state;
+      return { ...state, deferredCard: state.currentCard, currentCard: null, phase: 'TURN_END' };
+    }
+
+    case 'RESUME_CARD': {
+      if (!state.deferredCard) return state;
+      return { ...state, currentCard: state.deferredCard, deferredCard: null, phase: 'CARD_DECISION' };
+    }
 
     case 'SET_RENT_TIER': {
       const tier = action.payload.tier;

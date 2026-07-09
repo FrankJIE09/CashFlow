@@ -518,6 +518,8 @@ export interface GameState {
   decks: Decks;
   discardPiles: Decks;
   currentCard: Card | null;
+  /** 暂缓的卡片（用于暂不决策，处理其他操作后恢复） */
+  deferredCard: Card | null;
   marketMultiplier: Record<AssetType, number>;
   cashFlowMultiplier: Record<AssetType, number>;
   sectorMultiplier: Record<string, number>;
@@ -627,6 +629,8 @@ export type GameAction =
   | { type: 'MANUAL_SELL_STOCK'; payload: { assetId: string; sellHand: number } }
   | { type: 'STOP_AUTO_TEST' }
   | { type: 'SET_RENT_TIER'; payload: { tier: 'economy' | 'standard' | 'luxury' } }
+  | { type: 'DEFER_CARD' }
+  | { type: 'RESUME_CARD' }
   | { type: 'SET_DCA_PLAN'; payload: { assetId: string; monthlyAmount: number; smartEnabled: boolean; endRound: number | null } }
   | { type: 'TOGGLE_DCA_PLAN'; payload: { planId: string } }
   | { type: 'UPDATE_DCA_PLAN'; payload: { planId: string; monthlyAmount?: number; smartEnabled?: boolean; endRound?: number | null } }

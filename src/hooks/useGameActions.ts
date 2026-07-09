@@ -152,6 +152,14 @@ export function useGameActions() {
     dispatch({ type: 'SET_RENT_TIER', payload: { tier } });
   }, [dispatch]);
 
+  const deferCard = useCallback(() => {
+    dispatch({ type: 'DEFER_CARD' });
+  }, [dispatch]);
+
+  const resumeCard = useCallback(() => {
+    dispatch({ type: 'RESUME_CARD' });
+  }, [dispatch]);
+
   const setDcaPlan = useCallback((assetId: string, monthlyAmount: number, smartEnabled: boolean, endRound: number | null) => {
     dispatch({ type: 'SET_DCA_PLAN', payload: { assetId, monthlyAmount, smartEnabled, endRound } });
   }, [dispatch]);
@@ -200,6 +208,8 @@ export function useGameActions() {
     confirmDivorce,
     sellStockManually,
     setRentTier,
+    deferCard,
+    resumeCard,
     setDcaPlan,
     toggleDcaPlan,
     updateDcaPlan,

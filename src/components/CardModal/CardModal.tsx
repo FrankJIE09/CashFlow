@@ -623,6 +623,9 @@ export function CardModal() {
                     跳过
                   </button>
                 )}
+                <button className={styles.deferBtn} onClick={actions.deferCard}>
+                  ⏸ 暂缓
+                </button>
               </>
             )}
           </div>
@@ -830,6 +833,9 @@ export function CardModal() {
             </button>
             <button className={styles.secondaryButton} onClick={actions.declineCard}>
               放弃
+            </button>
+            <button className={styles.deferBtn} onClick={actions.deferCard}>
+              ⏸ 暂缓
             </button>
           </div>
         </div>

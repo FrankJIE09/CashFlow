@@ -14,10 +14,12 @@ import { useAIPlayer } from '../../hooks/useAIPlayer';
 import { useAutoTestAgent } from '../../hooks/useAutoTestAgent';
 import { AutoTestPanel } from '../AutoTestPanel/AutoTestPanel';
 import { useGame } from '../../context/GameContext';
+import { useGameActions } from '../../hooks/useGameActions';
 import styles from './GameScreen.module.css';
 
 export function GameScreen() {
   const { state } = useGame();
+  const actions = useGameActions();
   useAIPlayer();
   useAutoTestAgent();
 
@@ -52,6 +54,13 @@ export function GameScreen() {
       <WinScreen />
       <SoundEffects />
       {state.testMode && <AutoTestPanel />}
+      {state.deferredCard && state.phase !== 'CARD_DECISION' && (
+        <div className={styles.deferredBanner} onClick={actions.resumeCard}>
+          <span>⏸ 有暂缓的卡片</span>
+          <span className={styles.deferredLabel}>{state.deferredCard.title}</span>
+          <span>点击恢复</span>
+        </div>
+      )}
       {showAssetCenter && currentPlayer && (
         <AssetCenter
           player={currentPlayer}
