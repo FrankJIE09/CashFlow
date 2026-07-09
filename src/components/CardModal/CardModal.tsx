@@ -611,6 +611,9 @@ export function CardModal() {
               </button>
             ) : (
               <>
+                <button className={styles.deferBtn} onClick={actions.deferCard}>
+                  ⏸ 暂缓
+                </button>
                 <button
                   className={styles.primaryButton}
                   onClick={actions.payDoodad}
@@ -623,9 +626,6 @@ export function CardModal() {
                     跳过
                   </button>
                 )}
-                <button className={styles.deferBtn} onClick={actions.deferCard}>
-                  ⏸ 暂缓
-                </button>
               </>
             )}
           </div>
@@ -831,11 +831,11 @@ export function CardModal() {
             >
               {affordable ? '买入' : canLoan ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}
             </button>
-            <button className={styles.secondaryButton} onClick={actions.declineCard}>
-              放弃
-            </button>
             <button className={styles.deferBtn} onClick={actions.deferCard}>
               ⏸ 暂缓
+            </button>
+            <button className={styles.secondaryButton} onClick={actions.declineCard}>
+              放弃
             </button>
           </div>
         </div>
