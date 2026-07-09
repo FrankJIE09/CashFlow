@@ -1406,6 +1406,39 @@ export function applyCardIntrinsicGrowth(intrinsicPrice: number, asset: Asset, r
   return grown;
 }
 
+/** 简单的字符串哈希（DJB2），返回 [0, 1) 的确定值 */
+function hashToUnit(seed: string): number {
+  let hash = 5381;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) + hash) + seed.charCodeAt(i);
+    hash = hash & 0x7fffffff;
+  }
+  return (hash % 100000) / 100000;
+}
+
+/**
+ * 模拟指定回合数后的 PE 确定性漂移
+ * 同一 asset.id + round 永远产生相同的漂移值
+ * 漂移范围 ±6%/月，控制在 [basePe×0.4, basePe×2.0]
+ */
+export function simulateCardPeDrift(asset: Asset, rounds: number): number {
+  const DRIFT_RANGE = 0.06;
+  const basePe = getStockBasePe(asset);
+  const initialPe = asset.currentPe ?? basePe;
+  if (rounds <= 0) return initialPe;
+  let pe = initialPe;
+  for (let i = 0; i < rounds; i++) {
+    const seed = `${asset.id}_drift_${i}`;
+    const rn = hashToUnit(seed);
+    const driftPct = (rn - 0.5) * 2 * DRIFT_RANGE;
+    pe = pe * (1 + driftPct);
+    const minPe = basePe * 0.4;
+    const maxPe = basePe * 2.0;
+    pe = Math.max(minPe, Math.min(maxPe, Math.round(pe * 100) / 100));
+  }
+  return Math.round(pe * 100) / 100;
+}
+
 /**
  * 计算合理价值 = EPS × basePe
  */
@@ -1673,7 +1706,7 @@ export function canBuyResidentialProperty(player: Player, currentHouseCount: num
 // ==================== DCA 定投系统 ====================
 
 /** DCA 支持的资产类型（仅股票+黄金/商品类ETF） */
-export const DCA_SUPPORTED_ASSET_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'commodity']);
+export const DCA_SUPPORTED_ASSET_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'commodity', 'overseas']);
 
 /** 判断资产是否支持 DCA 定投 */
 export function isDcaSupported(asset: Asset): boolean {

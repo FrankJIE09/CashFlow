@@ -71,6 +71,7 @@ import {
   findExistingStockHolding,
   consolidateStockHoldings,
   applyCardIntrinsicGrowth,
+  simulateCardPeDrift,
 } from '../utils/financial';
 import { applyInsuranceDeductible } from '../utils/financial';
 import { drawCard, generateId, shuffle } from '../utils/random';
@@ -1098,8 +1099,13 @@ function executeBuyAsset(
       const newSinglePrice = Math.round((asset.singlePrice ?? 0) * growthRatio * 100) / 100;
       assetWithGrowth = { ...assetWithGrowth, singlePrice: newSinglePrice };
     }
+    // PE 估值类额外应用确定性 PE 漂移（卡牌模板 PE 从未漂移过）
+    if (isEquity) {
+      const driftedPe = simulateCardPeDrift(assetWithGrowth, state.round);
+      assetWithGrowth = { ...assetWithGrowth, currentPe: driftedPe };
+    }
     const effectivePrice = calcCurrentStockPrice(assetWithGrowth, state.marketMultiplier, state.sectorMultiplier);
-    finalAsset = buildStockLotAsset({ ...asset, singlePrice: effectivePrice, intrinsicPrice: grownIntrinsic }, lots, state.round);
+    finalAsset = buildStockLotAsset({ ...assetWithGrowth, singlePrice: effectivePrice }, lots, state.round);
   }
 
   const buyCost = calculateBuyCost(finalAsset, isStockLotAsset(finalAsset) ? finalAsset.shareHand : undefined) + dueDiligenceCost;

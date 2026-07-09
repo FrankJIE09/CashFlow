@@ -22,6 +22,7 @@ import {
   calcCurrentStockPrice,
   applyInsuranceDeductible,
   applyCardIntrinsicGrowth,
+  simulateCardPeDrift,
 } from '../../utils/financial';
 import { formatCurrency, formatPlayerAge } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
@@ -641,7 +642,12 @@ export function CardModal() {
     const liveSinglePrice = !isEquity && growthRatio !== 1
       ? Math.round((asset.singlePrice ?? 0) * growthRatio * 100) / 100
       : (asset.singlePrice ?? 0);
-    const liveAssetForPricing = { ...asset, intrinsicPrice: liveIntrinsicPrice, singlePrice: liveSinglePrice };
+    let liveAssetForPricing = { ...asset, intrinsicPrice: liveIntrinsicPrice, singlePrice: liveSinglePrice };
+    // PE 估值类额外应用确定性 PE 漂移
+    if (isEquity) {
+      const driftedPe = simulateCardPeDrift(liveAssetForPricing, state.round);
+      liveAssetForPricing = { ...liveAssetForPricing, currentPe: driftedPe };
+    }
     const meta = asset.metadata;
     const isDiscounted = space.type === 'market';
     const isStock = isStockLotAsset(asset);

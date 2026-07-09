@@ -993,6 +993,44 @@ export const OPPORTUNITY_CARDS: OpportunityCard[] = [
     },
   },
 
+  // ── 纳斯达克100ETF ──
+  {
+    id: 'nasdaq_etf',
+    title: '纳斯达克100ETF (513100)',
+    description: '跟踪纳斯达克100指数，聚焦全球科技巨头，高成长高波动。',
+    type: 'opportunity',
+    kind: 'bigDeal',
+    asset: {
+      id: 'nasdaq_etf_asset',
+      name: '纳斯达克100ETF',
+      type: 'overseas',
+      cost: 26000,
+      downPayment: 26000,
+      cashFlow: 25,
+      mortgage: 0,
+      marketValue: 26000,
+      shares: 8000,
+      shareHand: 1,
+      singlePrice: 260,
+      yearDivPerShare: 3.9,
+      basePe: 35,
+      currentPe: 35,
+      intrinsicPrice: 260,
+      metadata: {
+        sector: '宽基',
+        ticker: '513100',
+        exchange: '上交所',
+        liquidity: 'T+1',
+        incomeType: 'dividend',
+        riskLevel: 'high',
+        subCategory: 'QDII-ETF',
+        trackingIndex: '纳斯达克100',
+        managementFee: 0.008,
+        minInvestment: 100,
+      },
+    },
+  },
+
   // ── 大买卖：REITs / 商业地产 ──
   {
     id: 'pls_reit',
