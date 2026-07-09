@@ -11,17 +11,6 @@
   z-index: 50;
   padding: 20px;
   backdrop-filter: blur(4px);
-  transition: opacity 0.25s ease, backdrop-filter 0.25s ease;
-}
-
-.overlay.closing {
-  opacity: 0;
-  backdrop-filter: blur(0px);
-  pointer-events: none;
-}
-
-.overlay.closing .modal {
-  animation: cardClose 0.28s ease-in forwards;
 }
 
 .modal {
@@ -74,17 +63,6 @@
   to {
     opacity: 1;
     transform: translateY(0) rotate(0deg) scale(1);
-  }
-}
-
-@keyframes cardClose {
-  from {
-    opacity: 1;
-    transform: translateY(0) rotate(0deg) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(60px) rotate(2deg) scale(0.85);
   }
 }
 

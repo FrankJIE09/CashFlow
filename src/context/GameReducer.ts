@@ -1939,7 +1939,10 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
 
     case 'ROLL_DICE': {
       if (state.phase !== 'ROLLING' && state.phase !== 'FAST_TRACK') return state;
-      if (state.deferredCard) return state;
+      // 有暂缓卡片时自动弹出恢复
+      if (state.deferredCard) {
+        return { ...state, currentCard: state.deferredCard, deferredCard: null, phase: 'CARD_DECISION' };
+      }
 
       const dice = action.payload.dice;
       return { ...state, phase: 'MOVING', pendingDice: dice };

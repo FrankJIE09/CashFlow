@@ -34,22 +34,6 @@ export function CardModal() {
   const { play } = useSound();
   const hasPlayedRef = useRef(false);
   const [stockLots, setStockLots] = useState<number | ''>(1);
-  const [isClosing, setIsClosing] = useState(false);
-  const deferTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const handleDefer = () => {
-    setIsClosing(true);
-    deferTimerRef.current = setTimeout(() => {
-      actions.deferCard();
-      setIsClosing(false);
-    }, 280);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (deferTimerRef.current) clearTimeout(deferTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (state.phase === 'CARD_DECISION' && !hasPlayedRef.current) {
@@ -80,9 +64,9 @@ export function CardModal() {
     const pension = calcPensionIncome(player.baseSalary ?? player.salary, player.cityId);
     const elderlyMedical = calcElderlyMedicalExpense(player.cityId);
     return (
-      <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+      <div className={styles.overlay}>
         <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
           <div className={styles.cardType} style={{ backgroundColor: '#FFD700' }}>人生里程碑</div>
           <h2 className={styles.title}>🏖️ 正式退休</h2>
           <p className={styles.description}>
@@ -119,9 +103,9 @@ export function CardModal() {
       const newSalary = Math.round(player.salary * (1 + (event.salaryBoostPct ?? 0)));
       const cost = event.cost ?? 0;
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -149,9 +133,9 @@ export function CardModal() {
       const highSalary = Math.round(player.salary * (1 + (event.highPayBoostPct ?? 0.4)));
       const stableSalary = Math.round(player.salary * (1 - (event.stableSalaryCutPct ?? 0.15)));
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -180,9 +164,9 @@ export function CardModal() {
     if (event.type === 'layoff') {
       const severance = Math.round(player.salary * (event.severanceMonths ?? 4));
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -199,9 +183,9 @@ export function CardModal() {
 
     if (event.type === 'careerChange') {
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -222,9 +206,9 @@ export function CardModal() {
       const base = player.baseSalary ?? player.salary;
       const restored = Math.round(base * (event.restoredSalaryPct ?? 0.9));
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -246,9 +230,9 @@ export function CardModal() {
   if (space.type === 'charity') {
     const donation = Math.round(player.salary * 0.1);
     return (
-      <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+      <div className={styles.overlay}>
         <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
           <h2 className={styles.title}>慈善捐款</h2>
           <p className={styles.description}>
             你愿意捐赠月收入的 10%（{formatCurrency(donation)}）给慈善机构吗？
@@ -283,9 +267,9 @@ export function CardModal() {
 
       if (player.hasPregnancy) {
         return (
-          <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+          <div className={styles.overlay}>
             <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
               <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
               <h2 className={styles.title}>🤰 孕期管理</h2>
               <p className={styles.description}>已怀孕 {player.pregnancyMonths ?? 0}/9 月。</p>
@@ -300,9 +284,9 @@ export function CardModal() {
       }
 
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>家庭格</div>
             <h2 className={styles.title}>👶 生育计划</h2>
             <p className={styles.description}>
@@ -331,9 +315,9 @@ export function CardModal() {
     const canMarry = player.cash >= cost || player.cash + 50000 >= cost;
     const happiness = isRemarriage ? 50 : 60;
     return (
-      <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+      <div className={styles.overlay}>
         <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
           <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>人生选择</div>
           <h2 className={styles.title}>{isRemarriage ? '💍 再婚机会' : '💍 家庭格'}</h2>
           <p className={styles.description}>
@@ -365,9 +349,9 @@ export function CardModal() {
     const { amount, isAnnual } = state.pendingSettlement;
     const realEstateCount = player.assets.filter((a) => a.type === 'realEstate').length;
     return (
-      <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+      <div className={styles.overlay}>
         <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
           <div className={styles.cardType} style={{ backgroundColor: '#E8E8E8' }}>
             {isAnnual ? '年度结算' : '税务结算'}
           </div>
@@ -413,9 +397,9 @@ export function CardModal() {
         : player.assets.filter((a) => !a.isSelfLiving);
 
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡 - 收购要约</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -465,9 +449,9 @@ export function CardModal() {
 
     if (effect.type === 'unemployment' || effect.type === 'reemployment') {
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>生活事件</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -489,9 +473,9 @@ export function CardModal() {
 
     if (effect.type === 'discount') {
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡 - 买方市场</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -523,9 +507,9 @@ export function CardModal() {
         }      );
 
       return (
-        <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+        <div className={styles.overlay}>
           <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
             <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -600,9 +584,9 @@ export function CardModal() {
     const canLoan = shortfall > 0;
 
     return (
-      <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+      <div className={styles.overlay}>
         <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
           <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>额外支出</div>
           <h2 className={styles.title}>
             {isMedicalEvent && !hasInsurance ? '父母大病' : card.title}
@@ -702,9 +686,9 @@ export function CardModal() {
     const canLoan = !isStock && shortfall > 0 && purchaseGate.allowed;
 
     return (
-      <div className={`${styles.overlay}${isClosing ? ` ${styles.closing}` : ''}`}>
+      <div className={styles.overlay}>
         <div className={styles.modal}>
-          <button className={styles.minimizeBtn} onClick={handleDefer} title="暂缓卡片，稍后处理">—</button>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">—</button>
           <div className={styles.cardType} style={{ backgroundColor: '#3498db' }}>
             {isDiscounted ? '打折房产' : card.kind === 'smallDeal' ? '小生意' : '大买卖'}
           </div>
