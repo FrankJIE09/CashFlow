@@ -35,7 +35,8 @@ export function ActionBar({ onOpenAssetCenter }: { onOpenAssetCenter?: () => voi
   if (!player) return null;
 
   const isHumanTurn = !player.isAI && !player.isBankrupt && !state.testMode;
-  const canRoll = state.phase === 'ROLLING' || state.phase === 'FAST_TRACK';
+  const canRoll = (state.phase === 'ROLLING' || state.phase === 'FAST_TRACK') && !state.deferredCard;
+  const hasDeferred = !!state.deferredCard;
   const canEndTurn = state.phase === 'TURN_END';
   const canRepay = canPlayerRepay(state, player);
   const cashFlow = getMonthlyCashFlow(player);
@@ -63,7 +64,10 @@ export function ActionBar({ onOpenAssetCenter }: { onOpenAssetCenter?: () => voi
           <span className={styles.colorDot} style={{ backgroundColor: player.color }} />
           <span className={styles.playerName}>当前回合：{player.name}</span>
         </div>
-        <div className={styles.phase}>阶段：{getPhaseText(state.phase)}</div>
+        <div className={styles.phase}>
+          阶段：{getPhaseText(state.phase)}
+          {hasDeferred && <span className={styles.deferredHint}> ⏸ 有暂缓卡片</span>}
+        </div>
       </div>
 
       <div className={styles.actions}>

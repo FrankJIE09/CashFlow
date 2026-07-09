@@ -1939,6 +1939,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
 
     case 'ROLL_DICE': {
       if (state.phase !== 'ROLLING' && state.phase !== 'FAST_TRACK') return state;
+      if (state.deferredCard) return state;
 
       const dice = action.payload.dice;
       return { ...state, phase: 'MOVING', pendingDice: dice };
