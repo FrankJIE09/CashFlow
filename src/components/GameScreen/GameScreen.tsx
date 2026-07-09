@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Board } from '../Board/Board';
 import { PlayerPanel } from '../PlayerPanel/PlayerPanel';
 import { ActionBar } from '../ActionBar/ActionBar';
@@ -27,21 +27,28 @@ export function GameScreen() {
 
   const currentPlayer = state.players[state.currentPlayerIndex];
 
-  // 检测是否需要强制弹出租房选择（无自住房且不处于结束/设置阶段）
-  const needsRentChoice = useMemo(() => {
+  // 检测玩家是否有自住房
+  const hasSelfLiving = useMemo(() => {
     if (!currentPlayer) return false;
     if (state.phase === 'SETUP' || state.phase === 'GAME_OVER') return false;
     if (currentPlayer.isBankrupt) return false;
-    const hasSelfLiving = currentPlayer.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
-    return !hasSelfLiving;
+    return currentPlayer.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
   }, [currentPlayer, state.phase]);
 
-  // 当检测到需要租房选择时弹出
-  useMemo(() => {
-    if (needsRentChoice && !showRentModal && state.phase !== 'SETUP') {
+  // 【修复】仅在「从有房变成无房」的瞬间弹出一次租房选择
+  const prevHasSelfLiving = useRef<boolean | null>(null);
+  useEffect(() => {
+    // 初始化时记录当前状态但不弹出
+    if (prevHasSelfLiving.current === null) {
+      prevHasSelfLiving.current = hasSelfLiving;
+      return;
+    }
+    // 从有房变为无房时弹出
+    if (prevHasSelfLiving.current === true && hasSelfLiving === false && !showRentModal) {
       setShowRentModal(true);
     }
-  }, [needsRentChoice]);
+    prevHasSelfLiving.current = hasSelfLiving;
+  }, [hasSelfLiving]);
 
   return (
     <div className={styles.screen}>
