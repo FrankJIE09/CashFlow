@@ -775,7 +775,7 @@ function convertEquityMultiplierToPe(state: GameState): GameState {
 function applyMonthlyStockPeDrift(state: GameState): GameState {
   const players = state.players.map((player) => {
     const assets = player.assets.map((asset) => {
-      if (!isStockLotAsset(asset) || asset.basePe == null) return asset;
+      if (!isStockLotAsset(asset) || asset.basePe == null || asset.type === 'reit') return asset;
       const basePe = asset.basePe;
       const currentPe = asset.currentPe ?? basePe;
       const DRIFT_RANGE = 0.06; // ±6%
@@ -1090,7 +1090,14 @@ function executeBuyAsset(
     }
     // 【v3.11】用当前内在价值增长后的价格作为买入价
     const grownIntrinsic = applyCardIntrinsicGrowth(asset.intrinsicPrice ?? 0, asset, state.round);
-    const assetWithGrowth = { ...asset, intrinsicPrice: grownIntrinsic };
+    const growthRatio = grownIntrinsic / Math.max(asset.intrinsicPrice ?? 1, 0.01);
+    let assetWithGrowth = { ...asset, intrinsicPrice: grownIntrinsic };
+    // 非 PE 估值类（REIT 等）同步缩放 singlePrice 以反映内在价值增长
+    const isEquity = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
+    if (!isEquity && growthRatio !== 1) {
+      const newSinglePrice = Math.round((asset.singlePrice ?? 0) * growthRatio * 100) / 100;
+      assetWithGrowth = { ...assetWithGrowth, singlePrice: newSinglePrice };
+    }
     const effectivePrice = calcCurrentStockPrice(assetWithGrowth, state.marketMultiplier, state.sectorMultiplier);
     finalAsset = buildStockLotAsset({ ...asset, singlePrice: effectivePrice, intrinsicPrice: grownIntrinsic }, lots, state.round);
   }
@@ -1532,7 +1539,7 @@ function applyPeEffectToStockAssets(
   let affectedCount = 0;
 
   const newAssets = player.assets.map((asset) => {
-    if (!isStockLotAsset(asset) || asset.basePe == null) return asset;
+    if (!isStockLotAsset(asset) || asset.basePe == null || (effect.stockPeDelta && asset.type === 'reit')) return asset;
 
     let modified = { ...asset };
 

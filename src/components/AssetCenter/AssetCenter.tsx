@@ -125,7 +125,9 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
       const pb = getStockCurrentPb(asset);
       const basePe = getStockBasePe(asset);
       const currentPe = asset.currentPe ?? basePe;
-      const divYield = asset.metadata?.dividendYield;
+      const divYield = asset.yearDivPerShare
+        ? Math.round((asset.yearDivPerShare / curPrice) * 10000) / 10000
+        : asset.metadata?.dividendYield;
       const isEquityPE = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
 
       priceInfo = (

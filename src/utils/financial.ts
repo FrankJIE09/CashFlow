@@ -1364,7 +1364,18 @@ export function applyMonthlyIntrinsicGrowth(asset: Asset): Asset {
   if (asset.type === 'reit') {
     const oldIntrinsic = asset.intrinsicPrice ?? 0;
     if (oldIntrinsic > 0) {
-      return { ...asset, intrinsicPrice: Math.round(oldIntrinsic * monthlyGrowth * 100) / 100 };
+      const newIntrinsic = Math.round(oldIntrinsic * monthlyGrowth * 100) / 100;
+      const ratio = newIntrinsic / oldIntrinsic;
+      const newSinglePrice = Math.round((asset.singlePrice ?? 0) * ratio * 100) / 100;
+      const newYearDiv = Math.round((asset.yearDivPerShare ?? 0) * ratio * 100) / 100;
+      const newMV = Math.round((asset.marketValue ?? 0) * ratio);
+      return {
+        ...asset,
+        intrinsicPrice: newIntrinsic,
+        singlePrice: newSinglePrice,
+        yearDivPerShare: newYearDiv,
+        marketValue: newMV,
+      };
     }
     return asset;
   }

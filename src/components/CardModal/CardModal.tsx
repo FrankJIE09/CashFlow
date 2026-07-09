@@ -635,12 +635,19 @@ export function CardModal() {
     const liveIntrinsicPrice = isStockLotAsset(asset)
       ? applyCardIntrinsicGrowth(asset.intrinsicPrice ?? 0, asset, state.round)
       : (asset.intrinsicPrice ?? 0);
+    // 非 PE 估值类（REIT 等）同步缩放 singlePrice 以反映内在价值增长
+    const growthRatio = liveIntrinsicPrice / Math.max(asset.intrinsicPrice ?? 1, 0.01);
+    const isEquity = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
+    const liveSinglePrice = !isEquity && growthRatio !== 1
+      ? Math.round((asset.singlePrice ?? 0) * growthRatio * 100) / 100
+      : (asset.singlePrice ?? 0);
+    const liveAssetForPricing = { ...asset, intrinsicPrice: liveIntrinsicPrice, singlePrice: liveSinglePrice };
     const meta = asset.metadata;
     const isDiscounted = space.type === 'market';
     const isStock = isStockLotAsset(asset);
     const lots = isStock ? (stockLots === '' ? 0 : Math.max(1, Math.floor(stockLots))) : 1;
     const effectivePrice = isStock
-      ? calcCurrentStockPrice({ ...asset, intrinsicPrice: liveIntrinsicPrice }, state.marketMultiplier, state.sectorMultiplier)
+      ? calcCurrentStockPrice(liveAssetForPricing, state.marketMultiplier, state.sectorMultiplier)
       : 0;
     const lotPrincipal = isStock ? lots * 100 * effectivePrice : asset.downPayment;
     const lotCashFlow = isStock
@@ -716,7 +723,7 @@ export function CardModal() {
           {isStock && (asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative') && asset.basePe != null && asset.currentPe != null && (
             <div className={styles.valuationHint}>
               {(() => {
-                const price = calcCurrentStockPrice({ ...asset, intrinsicPrice: liveIntrinsicPrice }, state.marketMultiplier, state.sectorMultiplier);
+                const price = calcCurrentStockPrice(liveAssetForPricing, state.marketMultiplier, state.sectorMultiplier);
                 const valuation = judgeStockValuation(price, liveIntrinsicPrice);
                 const hintLabel = getValuationLabel(valuation);
                 return (
@@ -754,7 +761,7 @@ export function CardModal() {
             {isStock && (
               <div className={styles.assetRow}>
                 <span>现价</span>
-                <span>{formatCurrency(calcCurrentStockPrice({ ...asset, intrinsicPrice: liveIntrinsicPrice }, state.marketMultiplier, state.sectorMultiplier))}/份</span>
+                <span>{formatCurrency(calcCurrentStockPrice(liveAssetForPricing, state.marketMultiplier, state.sectorMultiplier))}/份</span>
               </div>
             )}
             <div className={styles.assetRow}>
