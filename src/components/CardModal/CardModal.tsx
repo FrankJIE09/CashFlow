@@ -66,6 +66,7 @@ export function CardModal() {
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
           <div className={styles.cardType} style={{ backgroundColor: '#FFD700' }}>人生里程碑</div>
           <h2 className={styles.title}>🏖️ 正式退休</h2>
           <p className={styles.description}>
@@ -104,6 +105,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -133,6 +135,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -163,6 +166,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -181,6 +185,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -203,6 +208,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: eventColor }}>职场事件</div>
             <h2 className={styles.title}>{event.title}</h2>
             <p className={styles.description}>{event.description}</p>
@@ -226,6 +232,7 @@ export function CardModal() {
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
           <h2 className={styles.title}>慈善捐款</h2>
           <p className={styles.description}>
             你愿意捐赠月收入的 10%（{formatCurrency(donation)}）给慈善机构吗？
@@ -262,6 +269,7 @@ export function CardModal() {
         return (
           <div className={styles.overlay}>
             <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
               <div className={styles.cardType} style={{ backgroundColor: '#ffb6c1' }}>人生选择</div>
               <h2 className={styles.title}>🤰 孕期管理</h2>
               <p className={styles.description}>已怀孕 {player.pregnancyMonths ?? 0}/9 月。</p>
@@ -278,6 +286,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>家庭格</div>
             <h2 className={styles.title}>👶 生育计划</h2>
             <p className={styles.description}>
@@ -308,6 +317,7 @@ export function CardModal() {
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
           <div className={styles.cardType} style={{ backgroundColor: '#ffb3ba' }}>人生选择</div>
           <h2 className={styles.title}>{isRemarriage ? '💍 再婚机会' : '💍 家庭格'}</h2>
           <p className={styles.description}>
@@ -341,6 +351,7 @@ export function CardModal() {
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
           <div className={styles.cardType} style={{ backgroundColor: '#E8E8E8' }}>
             {isAnnual ? '年度结算' : '税务结算'}
           </div>
@@ -388,6 +399,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡 - 收购要约</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -439,6 +451,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>生活事件</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -462,6 +475,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡 - 买方市场</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -495,6 +509,7 @@ export function CardModal() {
       return (
         <div className={styles.overlay}>
           <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
             <div className={styles.cardType} style={{ backgroundColor: '#f1c40f' }}>市场卡</div>
             <h2 className={styles.title}>{card.title}</h2>
             <p className={styles.description}>{card.description}</p>
@@ -571,6 +586,7 @@ export function CardModal() {
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
           <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>额外支出</div>
           <h2 className={styles.title}>
             {isMedicalEvent && !hasInsurance ? '父母大病' : card.title}
@@ -611,9 +627,6 @@ export function CardModal() {
               </button>
             ) : (
               <>
-                <button className={styles.deferBtn} onClick={actions.deferCard}>
-                  ⏸ 暂缓
-                </button>
                 <button
                   className={styles.primaryButton}
                   onClick={actions.payDoodad}
@@ -675,6 +688,7 @@ export function CardModal() {
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
+          <button className={styles.minimizeBtn} onClick={actions.deferCard} title="暂缓卡片，稍后处理">🗕</button>
           <div className={styles.cardType} style={{ backgroundColor: '#3498db' }}>
             {isDiscounted ? '打折房产' : card.kind === 'smallDeal' ? '小生意' : '大买卖'}
           </div>
@@ -830,9 +844,6 @@ export function CardModal() {
               }
             >
               {affordable ? '买入' : canLoan ? `贷款买入（缺 ${formatCurrency(shortfall)}）` : '无法买入'}
-            </button>
-            <button className={styles.deferBtn} onClick={actions.deferCard}>
-              ⏸ 暂缓
             </button>
             <button className={styles.secondaryButton} onClick={actions.declineCard}>
               放弃
