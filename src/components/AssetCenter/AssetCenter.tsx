@@ -113,7 +113,23 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
         )
       : null;
     const mortgagePayment = selfLivingMortgage ? selfLivingMortgage.monthlyPayment : 0;
-    const netCF = asset.type === 'realEstate' && asset.isSelfLiving ? actualCF - mortgagePayment : actualCF;
+    // 自住房的净现金流 = 资产现金流 - 房贷 + 节省的房租
+    // 模拟没有该自住房时的租金支出
+    let rentSavings = 0;
+    let rentSavingsStr = '';
+    if (asset.type === 'realEstate' && asset.isSelfLiving) {
+      const noSelfHomePlayer = {
+        ...player,
+        assets: player.assets.filter(a => !(a.type === 'realEstate' && a.isSelfLiving && a.id === asset.id)),
+      };
+      rentSavings = getRentExpense(noSelfHomePlayer, player.cityId);
+      if (rentSavings > 0) {
+        rentSavingsStr = `，省房租 ¥${rentSavings.toLocaleString()}/月`;
+      }
+    }
+    const netCF = asset.type === 'realEstate' && asset.isSelfLiving
+      ? actualCF - mortgagePayment + rentSavings
+      : actualCF;
 
     // 证券类资产价格信息
     let priceInfo: React.ReactNode = null;
@@ -192,7 +208,7 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
           </div>
           {priceInfo}
           <div className={styles.assetMeta}>
-            市值 {marketValue.toLocaleString()} 元 | 月现金流 {netCF >= 0 ? '+' : ''}{netCF.toLocaleString()} 元{hasCfMult ? `（基础 ${asset.cashFlow} × 类型${cfTypeMult.toFixed(2)}${cfSectorMult !== 1 ? ` × 行业${cfSectorMult.toFixed(2)}` : ''}` : ''}{selfLivingMortgage ? `，月供 ${mortgagePayment.toLocaleString()} 元` : ''}{hasCfMult ? '）' : ''}
+            市值 {marketValue.toLocaleString()} 元 | 月现金流 {netCF >= 0 ? '+' : ''}{netCF.toLocaleString()} 元{hasCfMult ? `（基础 ${asset.cashFlow} × 类型${cfTypeMult.toFixed(2)}${cfSectorMult !== 1 ? ` × 行业${cfSectorMult.toFixed(2)}` : ''}` : ''}{selfLivingMortgage ? `，月供 ${mortgagePayment.toLocaleString()} 元` : ''}{rentSavingsStr}{hasCfMult ? '）' : ''}
           </div>
         </div>
         <div className={styles.assetActions}>
