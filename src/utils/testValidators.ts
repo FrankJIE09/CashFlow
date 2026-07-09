@@ -1,5 +1,5 @@
 import type { BugLogEntry, GameAction, GameState, Player } from '../types/game';
-import { checkBankruptcy, getMonthlyCashFlow, needsLiquidation, calcHighDebtHappinessPenalty, getTotalLiabilities } from './financial';
+import { checkBankruptcy, getMonthlyCashFlow, needsLiquidation, calcHighDebtHappinessPenalty, getTotalLiabilities, isStockLotAsset, isDcaSupportedType, getDcaSmartMultiplier } from './financial';
 import { generateId } from './random';
 
 const CHILDREN_LIMIT = 3;
@@ -394,6 +394,127 @@ export function runTestValidators(
         message: `高负债幸福惩罚缺失（总负债${getTotalLiabilities(player)}>3x年收入=${((player.baseSalary ?? player.salary) * 12 * 3).toLocaleString()}应扣幸福度）`,
         action: action.type,
       });
+    }
+  }
+
+  // 【新增】v3.11 DCA 定投校验
+  if (player && action.type === 'MOVE_PLAYER') {
+    const dcaPlans = player.dcaPlans ?? [];
+    for (const plan of dcaPlans) {
+      // 校验1: 非定投资产非法创建定投
+      if (!isDcaSupportedType(plan.assetType)) {
+        next = appendBug(next, {
+          category: 'data_invalid',
+          severity: 'critical',
+          message: `不支持的定投资产类型：${plan.assetType}（${plan.assetName}）`,
+          action: action.type,
+        });
+      }
+
+      // 校验2: 定投计划关联的资产存在
+      const targetAsset = player.assets.find((a) => a.id === plan.assetId);
+      if (!targetAsset) {
+        next = appendBug(next, {
+          category: 'data_invalid',
+          severity: 'warning',
+          message: `定投计划 ${plan.id} 关联资产 ${plan.assetId} 不存在`,
+          action: action.type,
+        });
+        continue;
+      }
+
+      // 校验3: 智能定投倍率合法性
+      if (plan.smartEnabled && isStockLotAsset(targetAsset)) {
+        const mult = getDcaSmartMultiplier(targetAsset);
+        if (mult !== 2 && mult !== 1 && mult !== 0.5) {
+          next = appendBug(next, {
+            category: 'data_invalid',
+            severity: 'critical',
+            message: `智能定投倍率异常：${mult}`,
+            action: action.type,
+          });
+        }
+      }
+
+      // 校验4: 定投金额合理性
+      if (plan.monthlyAmount < 0 || plan.monthlyAmount > 1_000_000) {
+        next = appendBug(next, {
+          category: 'data_invalid',
+          severity: 'warning',
+          message: `定投金额异常：${plan.monthlyAmount}`,
+          action: action.type,
+        });
+      }
+    }
+
+    // 校验5: 最多5条定投计划
+    if (dcaPlans.length > 5) {
+      next = appendBug(next, {
+        category: 'data_invalid',
+        severity: 'critical',
+        message: `定投计划数量超过上限（${dcaPlans.length} > 5）`,
+        action: action.type,
+      });
+    }
+
+    // 校验6: 退休玩家无定投计划
+    if (player.isRetired && dcaPlans.length > 0) {
+      next = appendBug(next, {
+        category: 'data_invalid',
+        severity: 'warning',
+        message: '退休玩家仍有定投计划',
+        action: action.type,
+      });
+    }
+  }
+
+  // 校验7: 终止定投后不再买入（SET_DCA_PLAN 触发检查）
+  if (action.type === 'DELETE_DCA_PLAN') {
+    const { planId } = action.payload as { planId: string };
+    const prevPlans = prevState.players[state.currentPlayerIndex]?.dcaPlans ?? [];
+    const plan = prevPlans.find((p) => p.id === planId);
+    if (plan && next.players[next.currentPlayerIndex]?.dcaPlans?.some((p) => p.id === planId)) {
+      next = appendBug(next, {
+        category: 'state_machine',
+        severity: 'critical',
+        message: 'DELETE_DCA_PLAN 后计划仍存在',
+        action: action.type,
+      });
+    }
+  }
+
+  // 【v3.11】校验重复持仓：同一只股票不应存在多个独立 Asset
+  if (player && action.type === 'MOVE_PLAYER') {
+    const stockAssets = player.assets.filter((a) => isStockLotAsset(a));
+    const seen = new Map<string, number>();
+    for (const sa of stockAssets) {
+      const key = sa.metadata?.ticker ?? sa.name;
+      const existing = seen.get(key);
+      if (existing !== undefined) {
+        // 找到重复：比较当前价格是否一致
+        const first = stockAssets[existing];
+        if (first.shareHand !== sa.shareHand || Math.abs(first.cost - sa.cost) > 1) {
+          next = appendBug(next, {
+            category: 'data_invalid',
+            severity: 'critical',
+            message: `同一只股票 "${sa.name}" 存在 ${stockAssets.filter((x) => (x.metadata?.ticker ?? x.name) === key).length} 个独立持仓（应为合并为 1 个）`,
+            action: action.type,
+            snapshot: {
+              players: [
+                {
+                  ...next.players[next.currentPlayerIndex],
+                  assets: player.assets.filter((a) =>
+                    isStockLotAsset(a) && (a.metadata?.ticker ?? a.name) === key
+                  ),
+                },
+              ],
+            },
+          });
+          break;
+        }
+      } else {
+        seen.set(key, stockAssets.indexOf(sa));
+      }
     }
   }
 

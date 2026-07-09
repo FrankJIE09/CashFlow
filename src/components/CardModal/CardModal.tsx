@@ -20,6 +20,8 @@ import {
   judgeStockValuation,
   getValuationLabel,
   calcCurrentStockPrice,
+  applyInsuranceDeductible,
+  applyCardIntrinsicGrowth,
 } from '../../utils/financial';
 import { formatCurrency, formatPlayerAge } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
@@ -553,16 +555,30 @@ export function CardModal() {
   if (card.type === 'doodad') {
     const isInsuranceCard = (card as any).insuranceType != null && (card as any).insuranceMonthlyPremium != null;
     const isPartnerUnemployment = (card as any).partnerUnemploymentTurns != null && card.cost === 0;
-    const shortfall = card.cost - player.cash;
-    const canPay = player.cash >= card.cost;
+
+    // 【v3.7】保险抵扣医疗支出
+    const isMedicalEvent = (card as any).isMedicalEvent === true;
+    const hasInsurance = (player.insurances?.length ?? 0) > 0;
+    const finalCost = isMedicalEvent && hasInsurance
+      ? applyInsuranceDeductible(card.cost, player.insurances ?? [], (card as any).coverageRatio ?? 0.7, (card as any).deductible ?? 0)
+      : card.cost;
+
+    const shortfall = finalCost - player.cash;
+    const canPay = player.cash >= finalCost;
     const canLoan = shortfall > 0;
 
     return (
       <div className={styles.overlay}>
         <div className={styles.modal}>
           <div className={styles.cardType} style={{ backgroundColor: '#e74c3c' }}>额外支出</div>
-          <h2 className={styles.title}>{card.title}</h2>
-          <p className={styles.description}>{card.description}</p>
+          <h2 className={styles.title}>
+            {isMedicalEvent && !hasInsurance ? '父母大病' : card.title}
+          </h2>
+          <p className={styles.description}>
+            {isMedicalEvent && !hasInsurance
+              ? '父母突发大病，需要高额医疗费用。建议购买医疗保险，可报销大部分支出。'
+              : card.description}
+          </p>
           {isInsuranceCard ? (
             <div className={styles.costInfo}>
               <span>月缴保费：</span>
@@ -576,7 +592,12 @@ export function CardModal() {
           ) : (
             <div className={styles.costInfo}>
               <span>需要支付：</span>
-              <span className={styles.cost}>{formatCurrency(card.cost)}</span>
+              <span className={styles.cost}>{formatCurrency(finalCost)}</span>
+              {finalCost < card.cost && (
+                <div className={styles.recurringInfo}>
+                  🔒 保险已覆盖 {formatCurrency(card.cost - finalCost)} 元（原价 {formatCurrency(card.cost)}）
+                </div>
+              )}
             </div>
           )}
           {card.isRecurring && card.monthlyCost && !isInsuranceCard && (
@@ -611,12 +632,15 @@ export function CardModal() {
 
   if (card.type === 'opportunity') {
     const asset = getOpportunityAsset(card, player);
+    const liveIntrinsicPrice = isStockLotAsset(asset)
+      ? applyCardIntrinsicGrowth(asset.intrinsicPrice ?? 0, asset, state.round)
+      : (asset.intrinsicPrice ?? 0);
     const meta = asset.metadata;
     const isDiscounted = space.type === 'market';
     const isStock = isStockLotAsset(asset);
     const lots = isStock ? (stockLots === '' ? 0 : Math.max(1, Math.floor(stockLots))) : 1;
     const effectivePrice = isStock
-      ? calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier)
+      ? calcCurrentStockPrice({ ...asset, intrinsicPrice: liveIntrinsicPrice }, state.marketMultiplier, state.sectorMultiplier)
       : 0;
     const lotPrincipal = isStock ? lots * 100 * effectivePrice : asset.downPayment;
     const lotCashFlow = isStock
@@ -692,13 +716,12 @@ export function CardModal() {
           {isStock && (asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative') && asset.basePe != null && asset.currentPe != null && (
             <div className={styles.valuationHint}>
               {(() => {
-                const intrinsicPrice = asset.intrinsicPrice ?? 0;
-                const price = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
-                const valuation = judgeStockValuation(price, intrinsicPrice);
+                const price = calcCurrentStockPrice({ ...asset, intrinsicPrice: liveIntrinsicPrice }, state.marketMultiplier, state.sectorMultiplier);
+                const valuation = judgeStockValuation(price, liveIntrinsicPrice);
                 const hintLabel = getValuationLabel(valuation);
                 return (
                   <span>
-                    合理价值 {formatCurrency(intrinsicPrice)}，现价 {formatCurrency(price)}，标的{hintLabel}
+                    合理价值 {formatCurrency(liveIntrinsicPrice)}，现价 {formatCurrency(price)}，标的{hintLabel}
                     {valuation === 'deepUndervalue' && ' 💎'}
                     {valuation === 'undervalue' && ' 🔍'}
                     {valuation === 'fair' && ' ✅'}
@@ -725,13 +748,13 @@ export function CardModal() {
             {isStock && (
               <div className={styles.assetRow}>
                 <span>合理价值</span>
-                <span>{formatCurrency(asset.intrinsicPrice ?? 0)}/份</span>
+                <span>{formatCurrency(liveIntrinsicPrice)}/份</span>
               </div>
             )}
             {isStock && (
               <div className={styles.assetRow}>
                 <span>现价</span>
-                <span>{formatCurrency(calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier))}/份</span>
+                <span>{formatCurrency(calcCurrentStockPrice({ ...asset, intrinsicPrice: liveIntrinsicPrice }, state.marketMultiplier, state.sectorMultiplier))}/份</span>
               </div>
             )}
             <div className={styles.assetRow}>

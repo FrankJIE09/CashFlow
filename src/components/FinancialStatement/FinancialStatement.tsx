@@ -31,6 +31,8 @@ import {
   judgeStockValuation,
   getStockBasePe,
   getValuationLabel,
+  getAssetAverageCost,
+  getDcaSmartMultiplier,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
@@ -162,6 +164,12 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
               <span>其他</span>
               <span>{formatCurrency(player.expenses.other)}</span>
             </div>
+            {(player.recurringDoodadExpenses ?? 0) > 0 && (
+              <div className={styles.subRow}>
+                <span>└ 长期事件支出（赡养等）</span>
+                <span>{formatCurrency(player.recurringDoodadExpenses!)}</span>
+              </div>
+            )}
             <div className={styles.row}>
               <span>子女支出（{player.children} × {formatCurrency(player.expenses.perChild)}）</span>
               <span>{formatCurrency(player.children * player.expenses.perChild)}</span>
@@ -302,6 +310,15 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                         </span>
                         <span>合理价值 {formatCurrency(intrinsicPrice)} | 现价 {formatCurrency(currentPrice)}</span>
                         <span>持仓成本 {formatCurrency(buyPrice)} | 浮盈/浮亏 {profit >= 0 ? '+' : ''}{formatCurrency(profit)}</span>
+                        {asset.buyPe != null && (
+                          <span>买入PE {asset.buyPe.toFixed(1)} → 现PE {currentPe.toFixed(1)}</span>
+                        )}
+                        {asset.buyPb != null && (
+                          <span>买入PB {asset.buyPb.toFixed(2)} → 现PB {(asset.metadata?.pb ?? 0).toFixed(2)}</span>
+                        )}
+                        {asset.buyDivYield != null && (
+                          <span>买入股息 {(asset.buyDivYield * 100).toFixed(1)}% → 现股息 {((asset.metadata?.dividendYield ?? 0) * 100).toFixed(1)}%</span>
+                        )}
                       </div>
                     );
                   }
@@ -348,6 +365,59 @@ export function FinancialStatement({ player, onClose, canRepay = false }: Financ
                   );
                 })}
               </>
+            )}
+          </section>
+
+          {/* DCA 定投管理 */}
+          <section className={styles.section}>
+            <h3>定投管理</h3>
+            {(!player.dcaPlans || player.dcaPlans.length === 0) ? (
+              <div className={styles.empty}>暂无定投计划</div>
+            ) : (
+              player.dcaPlans.map((plan) => {
+                const targetAsset = player.assets.find((a) => a.id === plan.assetId);
+                const currentPrice = targetAsset ? calcCurrentStockPrice(targetAsset, state.marketMultiplier, state.sectorMultiplier) : 0;
+                const avgCost = targetAsset ? getAssetAverageCost(targetAsset) : 0;
+                const smartMult = plan.smartEnabled && targetAsset ? getDcaSmartMultiplier(targetAsset) : 1;
+                const effectiveAmount = Math.round(plan.monthlyAmount * smartMult);
+                return (
+                  <div key={plan.id} className={styles.dcaPlanCard}>
+                    <div className={styles.dcaPlanHeader}>
+                      <span className={styles.dcaPlanName}>
+                        {getAssetIcon(plan.assetType)} {plan.assetName}
+                      </span>
+                      <span className={`${styles.dcaStatus} ${plan.paused ? styles.dcaPaused : styles.dcaActive}`}>
+                        {plan.paused ? '已暂停' : '进行中'}
+                      </span>
+                    </div>
+                    <div className={styles.dcaPlanDetails}>
+                      <span>月投 {plan.monthlyAmount.toLocaleString()} 元</span>
+                      {plan.smartEnabled && (
+                        <span>智能×{smartMult.toFixed(1)} → 实投 {effectiveAmount.toLocaleString()} 元</span>
+                      )}
+                      {avgCost > 0 && <span>均价 {avgCost.toLocaleString()} 元</span>}
+                      {targetAsset && <span>现价 {currentPrice.toLocaleString()} 元</span>}
+                      {plan.endRound != null && (
+                        <span>终止回合 第 {plan.endRound} 回合</span>
+                      )}
+                    </div>
+                    <div className={styles.dcaPlanActions}>
+                      <button
+                        className={`${styles.dcaToggleBtn} cartoon-button`}
+                        onClick={() => actions.toggleDcaPlan(plan.id)}
+                      >
+                        {plan.paused ? '恢复' : '暂停'}
+                      </button>
+                      <button
+                        className={`${styles.dcaDeleteBtn} cartoon-button`}
+                        onClick={() => actions.deleteDcaPlan(plan.id)}
+                      >
+                        终止
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </section>
 

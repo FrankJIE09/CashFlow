@@ -120,6 +120,24 @@
   color: #fff;
 }
 
+.dcaBtn {
+  padding: 6px 14px;
+  border: 2px solid #2ecc71;
+  border-radius: 8px;
+  background: #fff;
+  color: #2ecc71;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.dcaBtn:hover {
+  background: #2ecc71;
+  color: #fff;
+}
+
 .selfLivingTag {
   display: inline-block;
   padding: 2px 8px;

@@ -1,4 +1,4 @@
-import type { Asset, AssetType, Card, CardType, DoodadCard, GameAction, GameConfig, GameState, Liability, MarketEffect, OpportunityCard, Player, PregnancyPath, Space } from '../types/game';
+import type { Asset, AssetType, Card, CardType, DoodadCard, DcaPlan, GameAction, GameConfig, GameState, Liability, MarketEffect, OpportunityCard, Player, PregnancyPath, Space } from '../types/game';
 import { runTestValidators } from '../utils/testValidators';
 import { PROFESSIONS, PLAYER_COLORS, CUSTOM_PROFESSION_ID, buildCustomProfession, getProfessionAgeConfig, isSelfEmployedProfession } from '../data/professions';
 import { getCityById, DEFAULT_CITY_ID } from '../data/cities';
@@ -61,6 +61,16 @@ import {
   syncPbAndDivYieldOnPeChange,
   applyMonthlyIntrinsicGrowth,
   getRentExpense,
+  // DCA imports used in GameReducer
+  isDcaSupported,
+  getDcaSmartMultiplier,
+  calcDcaBuyLots,
+  calcDcaActualCost,
+  getAssetAverageCost,
+  STOCK_LOT_SIZE,
+  findExistingStockHolding,
+  consolidateStockHoldings,
+  applyCardIntrinsicGrowth,
 } from '../utils/financial';
 import { applyInsuranceDeductible } from '../utils/financial';
 import { drawCard, generateId, shuffle } from '../utils/random';
@@ -220,6 +230,12 @@ function executeRetirement(state: GameState, playerIndex: number): GameState {
 
 function processMonthlyLifeEvents(state: GameState, playerIndex: number): GameState {
   let newState = state;
+
+  // 【v3.11】自动合并重复的同一只股票持仓
+  newState = updatePlayer(newState, playerIndex, (p) => ({
+    ...p,
+    assets: consolidateStockHoldings(p.assets),
+  }));
 
   // 月度资产刷新：持有月数/车辆折旧/大宗商品价格波动
   newState = updatePlayer(newState, playerIndex, (p) => ({
@@ -1072,9 +1088,11 @@ function executeBuyAsset(
     if (!Number.isInteger(lots) || lots < 1) {
       return addLog(state, player.id, `${player.name} 股票须按整手买入（1手=100股）`, 'system');
     }
-    // 用当前市价（含市场/行业乘数）作为买入价
-    const effectivePrice = calcCurrentStockPrice(asset, state.marketMultiplier, state.sectorMultiplier);
-    finalAsset = buildStockLotAsset({ ...asset, singlePrice: effectivePrice }, lots, state.round);
+    // 【v3.11】用当前内在价值增长后的价格作为买入价
+    const grownIntrinsic = applyCardIntrinsicGrowth(asset.intrinsicPrice ?? 0, asset, state.round);
+    const assetWithGrowth = { ...asset, intrinsicPrice: grownIntrinsic };
+    const effectivePrice = calcCurrentStockPrice(assetWithGrowth, state.marketMultiplier, state.sectorMultiplier);
+    finalAsset = buildStockLotAsset({ ...asset, singlePrice: effectivePrice, intrinsicPrice: grownIntrinsic }, lots, state.round);
   }
 
   const buyCost = calculateBuyCost(finalAsset, isStockLotAsset(finalAsset) ? finalAsset.shareHand : undefined) + dueDiligenceCost;
@@ -1120,6 +1138,25 @@ function executeBuyAsset(
         newAsset = { ...newAsset, isSelfLiving: true };
       }
     }
+
+    // 【v3.11】同只股票合并持仓，避免各自独立漂移PE导致不同价格
+    if (isStockLotAsset(finalAsset)) {
+      const existing = findExistingStockHolding(finalAsset, p.assets);
+      if (existing) {
+        const totalLots = (existing.shareHand ?? 0) + (finalAsset.shareHand ?? 0);
+        const totalCost = existing.cost + buyCost;
+        return {
+          ...p,
+          cash: p.cash - buyCost,
+          assets: p.assets.map((a) =>
+            a.id === existing.id
+              ? { ...a, shareHand: totalLots, cost: totalCost, downPayment: totalCost, marketValue: Math.round(totalLots * STOCK_LOT_SIZE * (existing.singlePrice ?? 0)) }
+              : a
+          ),
+        };
+      }
+    }
+
     return { ...p, cash: p.cash - buyCost, assets: [...p.assets, newAsset] };
   });
 
@@ -1910,6 +1947,7 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
 
       newState = advanceOneMonth(newState, playerIndex);
       newState = handlePayday(newState, playerIndex);
+      newState = executeMonthlyDca(newState, playerIndex);
 
       if (crossedLap) {
         newState = onLapCrossed(newState, playerIndex);
@@ -2118,11 +2156,17 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       newState = updatePlayer(newState, playerIndex, (p) => {
         let next: Player = { ...p, cash: p.cash - finalCost };
 
+        // 【v3.11】长期事件去重：同一张卡片的月费不重复叠加
         if (card.isRecurring && card.monthlyCost) {
-          next = {
-            ...next,
-            expenses: { ...next.expenses, other: next.expenses.other + card.monthlyCost! },
-          };
+          const applied = next.appliedRecurringDoodadIds ?? [];
+          if (card.id && !applied.includes(card.id)) {
+            next = {
+              ...next,
+              expenses: { ...next.expenses, other: next.expenses.other + card.monthlyCost! },
+              recurringDoodadExpenses: (next.recurringDoodadExpenses ?? 0) + card.monthlyCost!,
+              appliedRecurringDoodadIds: [...applied, card.id],
+            };
+          }
         }
 
         if (card.happinessDelta && next.marriageStatus === 'married') {
@@ -2731,6 +2775,9 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
           remaining.id = asset.id;
           remaining.heldMonths = asset.heldMonths;
           remaining.purchaseRound = asset.purchaseRound;
+          // 【v3.11】合并持仓后按比例保留成本
+          remaining.cost = Math.round(asset.cost * (remainingLots / totalLots));
+          remaining.downPayment = remaining.cost;
           return {
             ...p,
             cash: p.cash + sellPrice,
@@ -2909,6 +2956,9 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
         remaining.basePe = stockAsset.basePe;
         remaining.currentPe = stockAsset.currentPe;
         remaining.intrinsicPrice = stockAsset.intrinsicPrice;
+        // 【v3.11】合并持仓后，按比例保留成本（否则 buildStockLotAsset 会用模板价重算）
+        remaining.cost = Math.round(stockAsset.cost * (remainingLots / totalLots));
+        remaining.downPayment = remaining.cost;
         return {
           ...p,
           cash: p.cash + sellPrice,
@@ -2925,6 +2975,90 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
       return { ...newState };
     }
 
+    case 'SET_DCA_PLAN': {
+      if (player.isRetired) {
+        return addLog(state, player.id, '退休玩家无法创建新定投计划', 'system');
+      }
+      const { assetId, monthlyAmount, smartEnabled, endRound } = action.payload;
+      const targetAsset = player.assets.find((a) => a.id === assetId);
+      if (!targetAsset) {
+        return addLog(state, player.id, '未找到目标资产，无法创建定投计划', 'system');
+      }
+      if (!isDcaSupported(targetAsset)) {
+        return addLog(state, player.id, `${targetAsset.name} 不支持定投`, 'system');
+      }
+      const existingPlans = player.dcaPlans ?? [];
+      if (existingPlans.length >= 5) {
+        return addLog(state, player.id, '最多同时存在 5 条定投计划', 'system');
+      }
+      const newPlan: DcaPlan = {
+        id: generateId(),
+        assetId,
+        assetName: targetAsset.name,
+        assetType: targetAsset.type,
+        monthlyAmount,
+        smartEnabled,
+        paused: false,
+        startedRound: state.round,
+        endRound,
+      };
+      return updatePlayer(state, playerIndex, (p) => ({
+        ...p,
+        dcaPlans: [...existingPlans, newPlan],
+      }));
+    }
+
+    case 'TOGGLE_DCA_PLAN': {
+      const { planId: togglePlanId } = action.payload;
+      const existingPlans = player.dcaPlans ?? [];
+      const planToToggle = existingPlans.find((p) => p.id === togglePlanId);
+      if (!planToToggle) return state;
+      return updatePlayer(state, playerIndex, (p) => ({
+        ...p,
+        dcaPlans: existingPlans.map((plan) =>
+          plan.id === togglePlanId ? { ...plan, paused: !plan.paused } : plan
+        ),
+      }));
+    }
+
+    case 'UPDATE_DCA_PLAN': {
+      const { planId: updatePlanId, monthlyAmount: newMonthlyAmount, smartEnabled: newSmartEnabled, endRound: newEndRound } = action.payload;
+      const plansToUpdate = player.dcaPlans ?? [];
+      return updatePlayer(state, playerIndex, (p) => ({
+        ...p,
+        dcaPlans: plansToUpdate.map((plan) => {
+          if (plan.id !== updatePlanId) return plan;
+          return {
+            ...plan,
+            ...(newMonthlyAmount !== undefined ? { monthlyAmount: newMonthlyAmount } : {}),
+            ...(newSmartEnabled !== undefined ? { smartEnabled: newSmartEnabled } : {}),
+            ...(newEndRound !== undefined ? { endRound: newEndRound } : {}),
+          };
+        }),
+      }));
+    }
+
+    case 'DELETE_DCA_PLAN': {
+      const { planId: deletePlanId } = action.payload;
+      const plansForDelete = player.dcaPlans ?? [];
+      const deletedPlan = plansForDelete.find((p) => p.id === deletePlanId);
+      if (!deletedPlan) return state;
+      let newState2 = updatePlayer(state, playerIndex, (p) => ({
+        ...p,
+        dcaPlans: plansForDelete.filter((plan) => plan.id !== deletePlanId),
+      }));
+      newState2 = addLog(
+        newState2,
+        player.id,
+        `${player.name} 终止了 ${deletedPlan.assetName} 定投计划`,
+        'dca'
+      );
+      return newState2;
+    }
+
+    case 'DCA_WARNING_DISMISS':
+      return state;
+
     case 'SET_RENT_TIER': {
       const tier = action.payload.tier;
       return updatePlayer(state, playerIndex, (p) => ({
@@ -2936,6 +3070,115 @@ function gameReducerSwitch(state: GameState, action: GameAction): GameState {
     default:
       return state;
   }
+}
+
+/**
+ * 月度定投执行：在发薪结算后执行所有未暂停的定投计划
+ * 扣款优先级：刚性支出已在 handlePayday 中扣除，此处仅处理定投
+ */
+function executeMonthlyDca(state: GameState, playerIndex: number): GameState {
+  const player = state.players[playerIndex];
+  const plans = player.dcaPlans ?? [];
+  if (plans.length === 0) return state;
+
+  let newState = state;
+  const multiplier = state.marketMultiplier;
+  const sectorMult = state.sectorMultiplier;
+
+  for (const plan of plans) {
+    // 跳过暂停或已终止的计划
+    if (plan.paused) continue;
+    if (plan.endRound != null && state.round > plan.endRound) {
+      // 到期自动终止
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        dcaPlans: (p.dcaPlans ?? []).filter((dp) => dp.id !== plan.id),
+      }));
+      newState = addLog(
+        newState,
+        player.id,
+        `${player.name} 的 ${plan.assetName} 定投计划已到期自动终止`,
+        'dca'
+      );
+      continue;
+    }
+
+    // 查找目标资产
+    const assetIndex = newState.players[playerIndex].assets.findIndex((a) => a.id === plan.assetId);
+    if (assetIndex === -1) continue;
+
+    const targetAsset = newState.players[playerIndex].assets[assetIndex];
+    if (!isStockLotAsset(targetAsset)) continue;
+
+    // 计算智能定投倍率
+    let effectiveAmount = plan.monthlyAmount;
+    if (plan.smartEnabled) {
+      const smartMult = getDcaSmartMultiplier(targetAsset);
+      effectiveAmount = Math.round(plan.monthlyAmount * smartMult);
+    }
+
+    // 检查现金是否足够
+    const currentPrice = calcCurrentStockPrice(targetAsset, multiplier, sectorMult);
+    if (currentPrice <= 0) continue;
+
+    const lots = calcDcaBuyLots(effectiveAmount, currentPrice);
+    if (lots <= 0) continue;
+
+    const buyCost = calcDcaActualCost(lots, currentPrice);
+    const currentCash = newState.players[playerIndex].cash;
+
+    if (currentCash < buyCost) {
+      // 现金不足，暂停本回合定投
+      newState = updatePlayer(newState, playerIndex, (p) => ({
+        ...p,
+        dcaPlans: (p.dcaPlans ?? []).map((dp) =>
+          dp.id === plan.id ? { ...dp, paused: true } : dp
+        ),
+      }));
+      newState = addLog(
+        newState,
+        player.id,
+        `${player.name} 现金不足（${currentCash}），${plan.assetName} 定投暂停`,
+        'dca'
+      );
+      continue;
+    }
+
+    // 执行买入：增持份额
+    const existingHands = targetAsset.shareHand ?? 0;
+    const newTotalLots = existingHands + lots;
+    const totalCost = targetAsset.cost + buyCost;
+
+    // 更新资产
+    const updatedAsset: Asset = {
+      ...targetAsset,
+      shareHand: newTotalLots,
+      cost: totalCost,
+      downPayment: totalCost,
+      marketValue: newTotalLots * STOCK_LOT_SIZE * currentPrice,
+      heldMonths: targetAsset.heldMonths,
+    };
+
+    // 更新玩家：扣现金 + 替换资产
+    newState = updatePlayer(newState, playerIndex, (p) => {
+      const newAssets = p.assets.map((a) => (a.id === plan.assetId ? updatedAsset : a));
+      return {
+        ...p,
+        cash: p.cash - buyCost,
+        assets: newAssets,
+      };
+    });
+
+    const avgCost = getAssetAverageCost(updatedAsset);
+    newState = addLog(
+      newState,
+      player.id,
+      `${player.name} 定投 ${plan.assetName} ${lots} 手，花费 ${buyCost} 元，均价 ${avgCost} 元/股`,
+      'dca'
+    );
+  }
+
+  return newState;
 }
 
 /**
@@ -3022,6 +3265,13 @@ function passesCardFilter(player: Player, card: DoodadCard): boolean {
       ? player.assets.some((a) => a.metadata?.sector === cfg.requiresAssetSector)
       : false;
     if (!hasLiability && !hasAsset) return false;
+  }
+  // 【新增】v3.11 保险要求：玩家必须持有指定类型的保险
+  if (cfg.requiresInsurance && cfg.requiresInsurance.length > 0) {
+    const hasRequiredInsurance = cfg.requiresInsurance.some((insType) =>
+      (player.insurances ?? []).includes(insType)
+    );
+    if (!hasRequiredInsurance) return false;
   }
   return true;
 }

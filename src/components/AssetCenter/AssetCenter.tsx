@@ -12,9 +12,12 @@ import {
   getStockPriceChange,
   getStockCurrentPb,
   getStockBasePe,
+  isDcaSupported,
+  getAssetAverageCost,
 } from '../../utils/financial';
 import { formatCurrency } from '../../utils/format';
 import { getAssetIcon } from '../Icons/GameIcons';
+import { DcaModal } from '../DcaModal/DcaModal';
 import styles from './AssetCenter.module.css';
 
 interface AssetCenterProps {
@@ -32,6 +35,7 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
   const { state } = useGame();
   const actions = useGameActions();
   const [sellingIds, setSellingIds] = useState<Set<string>>(new Set());
+  const [dcaAsset, setDcaAsset] = useState<typeof player.assets[number] | null>(null);
 
   const hasSelfLiving = player.assets.some(a => a.type === 'realEstate' && a.isSelfLiving);
   const currentTier = player.rentTier ?? 'standard';
@@ -125,33 +129,49 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
       const isEquityPE = asset.type === 'stock' || asset.type === 'overseas' || asset.type === 'derivative';
 
       priceInfo = (
-        <div className={styles.priceRow}>
-          <span className={styles.priceItem}>
-            合理价值 <strong>{formatCurrency(fairValue)}</strong>
-          </span>
-          <span className={styles.priceArrow}>→</span>
-          <span className={styles.priceItem}>
-            现价 <strong>{formatCurrency(curPrice)}</strong>
-          </span>
-          <span className={isUp ? styles.priceUp : styles.priceDown}>
-            {isUp ? '+' : ''}{changePct.toFixed(1)}%
-          </span>
-          <span className={styles.priceDivider}>|</span>
-          {isEquityPE && currentPe != null && (
+        <div>
+          <div className={styles.priceRow}>
             <span className={styles.priceItem}>
-              PE <strong>{currentPe.toFixed(1)}</strong>
+              合理价值 <strong>{formatCurrency(fairValue)}</strong>
             </span>
-          )}
-          {isEquityPE && pb != null && (
+            <span className={styles.priceArrow}>→</span>
             <span className={styles.priceItem}>
-              PB <strong>{pb.toFixed(2)}</strong>
+              现价 <strong>{formatCurrency(curPrice)}</strong>
             </span>
-          )}
-          {divYield != null && (
-            <span className={styles.priceItem}>
-              股息 <strong>{(divYield * 100).toFixed(1)}%</strong>
+            <span className={isUp ? styles.priceUp : styles.priceDown}>
+              {isUp ? '+' : ''}{changePct.toFixed(1)}%
             </span>
-          )}
+            <span className={styles.priceDivider}>|</span>
+            {isEquityPE && currentPe != null && (
+              <span className={styles.priceItem}>
+                PE <strong>{currentPe.toFixed(1)}</strong>
+              </span>
+            )}
+            {isEquityPE && pb != null && (
+              <span className={styles.priceItem}>
+                PB <strong>{pb.toFixed(2)}</strong>
+              </span>
+            )}
+            {divYield != null && (
+              <span className={styles.priceItem}>
+                股息 <strong>{(divYield * 100).toFixed(1)}%</strong>
+              </span>
+            )}
+          </div>
+          <div className={styles.priceRow} style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-light)' }}>
+            {(asset.shareHand ?? 0) > 0 && (
+              <span>均价 {formatCurrency(getAssetAverageCost(asset))}</span>
+            )}
+            {asset.buyPe != null && isEquityPE && (
+              <span style={{ marginLeft: 12 }}>买入PE {asset.buyPe.toFixed(1)} → 现PE {currentPe.toFixed(1)}</span>
+            )}
+            {asset.buyPb != null && (
+              <span style={{ marginLeft: 12 }}>买入PB {asset.buyPb.toFixed(2)} → 现PB {(pb ?? 0).toFixed(2)}</span>
+            )}
+            {asset.buyDivYield != null && (
+              <span style={{ marginLeft: 12 }}>买入股息 {(asset.buyDivYield * 100).toFixed(1)}% → 现股息 {((divYield ?? 0) * 100).toFixed(1)}%</span>
+            )}
+          </div>
         </div>
       );
     }
@@ -181,6 +201,14 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
           >
             {stockLike ? `卖出（${asset.shareHand ?? 1}手）` : '卖出'}
           </button>
+          {isDcaSupported(asset) && !player.isRetired && (
+            <button
+              className={styles.dcaBtn}
+              onClick={() => setDcaAsset(asset)}
+            >
+              📊 设置定投
+            </button>
+          )}
         </div>
       </div>
     );
@@ -215,6 +243,14 @@ export function AssetCenter({ player, onClose }: AssetCenterProps) {
           Object.entries(assetGroups).map(([type, assets]) =>
             renderSection(type, assets)
           )
+        )}
+
+        {dcaAsset && (
+          <DcaModal
+            asset={dcaAsset}
+            currentRound={state.round}
+            onClose={() => setDcaAsset(null)}
+          />
         )}
       </div>
     </div>

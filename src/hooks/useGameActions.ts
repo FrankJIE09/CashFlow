@@ -152,6 +152,22 @@ export function useGameActions() {
     dispatch({ type: 'SET_RENT_TIER', payload: { tier } });
   }, [dispatch]);
 
+  const setDcaPlan = useCallback((assetId: string, monthlyAmount: number, smartEnabled: boolean, endRound: number | null) => {
+    dispatch({ type: 'SET_DCA_PLAN', payload: { assetId, monthlyAmount, smartEnabled, endRound } });
+  }, [dispatch]);
+
+  const toggleDcaPlan = useCallback((planId: string) => {
+    dispatch({ type: 'TOGGLE_DCA_PLAN', payload: { planId } });
+  }, [dispatch]);
+
+  const updateDcaPlan = useCallback((planId: string, params: { monthlyAmount?: number; smartEnabled?: boolean; endRound?: number | null }) => {
+    dispatch({ type: 'UPDATE_DCA_PLAN', payload: { planId, ...params } });
+  }, [dispatch]);
+
+  const deleteDcaPlan = useCallback((planId: string) => {
+    dispatch({ type: 'DELETE_DCA_PLAN', payload: { planId } });
+  }, [dispatch]);
+
   return {
     setupGame,
     restartGame,
@@ -184,6 +200,10 @@ export function useGameActions() {
     confirmDivorce,
     sellStockManually,
     setRentTier,
+    setDcaPlan,
+    toggleDcaPlan,
+    updateDcaPlan,
+    deleteDcaPlan,
   };
 }
 

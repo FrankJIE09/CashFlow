@@ -247,7 +247,7 @@ export const DOODAD_CARDS: DoodadCard[] = [
     deductible: 2000,
     happinessDelta: -10,
     isFamilyEvent: true,
-    filterConfig: { minAge: 25 },
+    filterConfig: { minAge: 25, requiresInsurance: ['medical'] },
   },
   // 【新增】v3.8 产后康复卡（仅限女性触发）
   {

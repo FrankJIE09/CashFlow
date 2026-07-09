@@ -203,7 +203,12 @@ export interface Asset {
   currentPe?: number;
   /** 【新增】v3.6 基础内在价值 = yearDivPerShare × basePe */
   intrinsicPrice?: number;
-  // ★ v3.10 已删除: originalSinglePrice, buyPe（买入成本从 cost 反算）
+  /** 买入时的动态 PE（用于对比当前 PE） */
+  buyPe?: number;
+  /** 买入时的 PB */
+  buyPb?: number;
+  /** 买入时的股息率 */
+  buyDivYield?: number;
   metadata?: AssetMetadata;
   /** 【新增】v3.10 是否为自住居所 */
   isSelfLiving?: boolean;
@@ -238,6 +243,27 @@ export interface CustomProfessionConfig {
   carLoanPrincipal?: number;
   studentLoanPrincipal?: number;
   creditCardDebt?: number;
+}
+
+/** 【新增】v3.11 DCA 定投计划 */
+export interface DcaPlan {
+  id: string;
+  /** 标的资产 ID */
+  assetId: string;
+  /** 标的资产名称（冗余，便于展示） */
+  assetName: string;
+  /** 标的资产类型 */
+  assetType: AssetType;
+  /** 每月定投金额（元） */
+  monthlyAmount: number;
+  /** 智能定投开关（根据 PE 动态调整投入） */
+  smartEnabled: boolean;
+  /** 是否暂停 */
+  paused: boolean;
+  /** 创建时的游戏回合 */
+  startedRound: number;
+  /** 终止回合（null 表示不终止） */
+  endRound: number | null;
 }
 
 export interface Player {
@@ -339,6 +365,12 @@ export interface Player {
   rentTier?: 'economy' | 'standard' | 'luxury';
   /** 【新增】v3.10 月租金支出 */
   rentExpense?: number;
+  /** 【新增】v3.11 DCA 定投计划列表 */
+  dcaPlans?: DcaPlan[];
+  /** 【新增】v3.11 长期事件（如赡养）累积月支出，用于财务报表单独展示 */
+  recurringDoodadExpenses?: number;
+  /** 【新增】v3.11 已应用的长期事件卡片 ID（防止重复叠加月费） */
+  appliedRecurringDoodadIds?: string[];
 }
 
 export interface Space {
@@ -436,6 +468,8 @@ export interface DoodadCard extends BaseCard {
     requiresLiabilityType?: DebtType;
     /** 玩家持有指定 sector 的资产时才触发（如 sector:'汽车'→汽车维修） */
     requiresAssetSector?: string;
+    /** 【新增】v3.11 要求玩家持有指定类型的保险才能触发 */
+    requiresInsurance?: ('medical' | 'dental' | 'life' | 'maternal')[];
   };
 }
 
@@ -452,7 +486,7 @@ export interface LogEntry {
   timestamp: number;
   playerId: string;
   message: string;
-  type: 'move' | 'income' | 'expense' | 'asset' | 'liability' | 'market' | 'system' | 'win' | 'repay';
+  type: 'move' | 'income' | 'expense' | 'asset' | 'liability' | 'market' | 'system' | 'win' | 'repay' | 'dca';
 }
 
 /** 【新增】v3.3 自动测试 Bug 日志条目 */
@@ -592,4 +626,9 @@ export type GameAction =
   | { type: 'DECLARE_BANKRUPTCY' }
   | { type: 'MANUAL_SELL_STOCK'; payload: { assetId: string; sellHand: number } }
   | { type: 'STOP_AUTO_TEST' }
-  | { type: 'SET_RENT_TIER'; payload: { tier: 'economy' | 'standard' | 'luxury' } };
+  | { type: 'SET_RENT_TIER'; payload: { tier: 'economy' | 'standard' | 'luxury' } }
+  | { type: 'SET_DCA_PLAN'; payload: { assetId: string; monthlyAmount: number; smartEnabled: boolean; endRound: number | null } }
+  | { type: 'TOGGLE_DCA_PLAN'; payload: { planId: string } }
+  | { type: 'UPDATE_DCA_PLAN'; payload: { planId: string; monthlyAmount?: number; smartEnabled?: boolean; endRound?: number | null } }
+  | { type: 'DELETE_DCA_PLAN'; payload: { planId: string } }
+  | { type: 'DCA_WARNING_DISMISS' };

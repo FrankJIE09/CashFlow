@@ -81,6 +81,8 @@ export function buildStockLotAsset(
   const basePe = template.basePe ?? SECTOR_BASE_PE[template.metadata?.sector ?? ''] ?? 15;
   const currentPe = template.currentPe ?? basePe;
   const intrinsicPrice = template.intrinsicPrice ?? 0;  // 合理价值来自模板，买入后不变
+  const buyPb = template.metadata?.pb;
+  const buyDivYield = template.metadata?.dividendYield ?? (yearDiv > 0 && singlePrice > 0 ? Math.round((yearDiv / singlePrice) * 10000) / 10000 : undefined);
   return {
     ...template,
     shareHand: lots,
@@ -89,6 +91,9 @@ export function buildStockLotAsset(
     basePe,
     currentPe,
     intrinsicPrice,           // 合理价值（模板继承，买入后固定）
+    buyPe: currentPe,         // 记录买入时的动态 PE
+    buyPb,                    // 记录买入时的 PB
+    buyDivYield,              // 记录买入时的股息率
     cost: marketValue,
     downPayment: marketValue,
     marketValue,
@@ -245,11 +250,13 @@ export function getUnemploymentProbability(tier: ProfessionTier): number {
 /** 【新增】v3.1 离婚概率 */
 export function getDivorceProbability(player: Player): number {
   if (player.marriageStatus !== 'married') return 0;
+  const hasChildren = (player.children ?? 0) > 0 || (player.childAges?.length ?? 0) > 0;
   let prob = 0;
-  if (player.marriageHappiness < 40) prob = 0.15;
+  if (player.marriageHappiness < 40) {
+    prob = hasChildren ? 0.08 : 0.15;
+  }
   if ((player.dinkTurns ?? 0) >= 12) {
-    // 【v3.8】女性 DINK 超过 12 回合额外离婚风险
-    prob = Math.max(prob, player.gender === 'female' ? 0.18 : 0.1);
+    prob = Math.max(prob, player.gender === 'female' ? (hasChildren ? 0.1 : 0.18) : (hasChildren ? 0.06 : 0.1));
   }
   if ((player.consecutiveUnemployedTurns ?? 0) >= 4 && (player.dinkTurns ?? 0) > 0) {
     prob = Math.max(prob, 0.1) * 2;
@@ -1324,10 +1331,10 @@ export function getAssetYearlyGrowthRate(asset: Asset): number {
  * 大宗商品：marketValue × (1+通胀)^(1/12)
  */
 export function applyMonthlyIntrinsicGrowth(asset: Asset): Asset {
-  const rate = getAssetYearlyGrowthRate(asset);
-  if (rate <= 0) return asset;
+  const growthRate = getAssetYearlyGrowthRate(asset);
+  if (growthRate <= 0) return asset;
 
-  const monthlyGrowth = (1 + rate) ** (1 / 12);
+  const monthlyGrowth = (1 + growthRate) ** (1 / 12);
 
   if (asset.type === 'stock' || asset.type === 'overseas') {
     const oldIntrinsic = asset.intrinsicPrice ?? 0;
@@ -1370,6 +1377,22 @@ export function applyMonthlyIntrinsicGrowth(asset: Asset): Asset {
   }
 
   return asset;
+}
+
+/**
+ * 将卡牌模板的 intrinsicPrice 按 N 个回合的内在价值增长复利
+ * 用于在买入/展示时反映当前市场的合理价值水平
+ */
+export function applyCardIntrinsicGrowth(intrinsicPrice: number, asset: Asset, rounds: number): number {
+  if (intrinsicPrice <= 0 || rounds <= 0) return intrinsicPrice;
+  const rate = getAssetYearlyGrowthRate(asset);
+  if (rate <= 0) return intrinsicPrice;
+  const monthlyGrowth = (1 + rate) ** (1 / 12);
+  let grown = intrinsicPrice;
+  for (let i = 0; i < rounds; i++) {
+    grown = Math.round(grown * monthlyGrowth * 100) / 100;
+  }
+  return grown;
 }
 
 /**
@@ -1634,4 +1657,129 @@ export function calcDinkElderlyCareExpense(cityId?: string): number {
 export function canBuyResidentialProperty(player: Player, currentHouseCount: number): boolean {
   if (player.marriageStatus === 'married') return true;
   return currentHouseCount < 2;
+}
+
+// ==================== DCA 定投系统 ====================
+
+/** DCA 支持的资产类型（仅股票+黄金/商品类ETF） */
+export const DCA_SUPPORTED_ASSET_TYPES: ReadonlySet<AssetType> = new Set(['stock', 'commodity']);
+
+/** 判断资产是否支持 DCA 定投 */
+export function isDcaSupported(asset: Asset): boolean {
+  return DCA_SUPPORTED_ASSET_TYPES.has(asset.type);
+}
+
+/** 判断资产类型是否支持 DCA */
+export function isDcaSupportedType(assetType: AssetType): boolean {
+  return DCA_SUPPORTED_ASSET_TYPES.has(assetType);
+}
+
+/**
+ * 智能定投：根据 currentPe / basePe 返回金额倍率
+ * PE < 0.7 * basePe → ×2（低估加仓）
+ * 0.7 * basePe <= PE <= 1.1 * basePe → ×1（正常投入）
+ * PE > 1.1 * basePe → ×0.5（高估减半）
+ */
+export function getDcaSmartMultiplier(asset: Asset): number {
+  const basePe = getStockBasePe(asset);
+  const currentPe = asset.currentPe ?? basePe;
+  const ratio = currentPe / basePe;
+  if (ratio < 0.7) return 2;
+  if (ratio > 1.1) return 0.5;
+  return 1;
+}
+
+/**
+ * 计算定投买入手数（至少 1 手，向下取整）
+ */
+export function calcDcaBuyLots(amount: number, singlePrice: number): number {
+  if (singlePrice <= 0) return 0;
+  return Math.max(1, Math.floor(amount / (singlePrice * STOCK_LOT_SIZE)));
+}
+
+/**
+ * 计算定投实际花费（含佣金）
+ */
+export function calcDcaActualCost(lots: number, singlePrice: number): number {
+  return stockLotBuyCost(lots, singlePrice);
+}
+
+/**
+ * 获取资产平均持仓成本（每股）
+ */
+export function getAssetAverageCost(asset: Asset): number {
+  if (!isStockLotAsset(asset)) return 0;
+  const totalShares = (asset.shareHand ?? 0) * STOCK_LOT_SIZE;
+  if (totalShares <= 0) return 0;
+  return Math.round((asset.cost / totalShares) * 100) / 100;
+}
+
+/**
+ * 判断两只证券类资产是否为同一只股票/ETF
+ * 优先按 ticker 匹配，其次按 name 匹配
+ */
+export function isSameStockIdentity(a: Asset, b: Asset): boolean {
+  if (a.type !== b.type) return false;
+  const tickerA = a.metadata?.ticker;
+  const tickerB = b.metadata?.ticker;
+  if (tickerA && tickerB) return tickerA === tickerB;
+  return a.name === b.name;
+}
+
+/**
+ * 在玩家持仓中查找同一只股票的已有持仓
+ */
+export function findExistingStockHolding(
+  newAsset: Asset,
+  playerAssets: Asset[]
+): Asset | undefined {
+  return playerAssets.find(
+    (existing) => isStockLotAsset(existing) && isSameStockIdentity(existing, newAsset)
+  );
+}
+
+/**
+ * 合并玩家中重复的同一只股票持仓
+ * 当同一只股票因多笔买入产生多个独立 Asset 时，合并为一条
+ */
+export function consolidateStockHoldings(assets: Asset[]): Asset[] {
+  const stockGroups = new Map<string, Asset[]>();
+  const nonStock: Asset[] = [];
+
+  for (const a of assets) {
+    if (!isStockLotAsset(a)) {
+      nonStock.push(a);
+      continue;
+    }
+    const key = a.metadata?.ticker ?? a.name;
+    const group = stockGroups.get(key) ?? [];
+    group.push(a);
+    stockGroups.set(key, group);
+  }
+
+  const merged: Asset[] = [];
+  for (const [, group] of stockGroups) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+    } else {
+      // 合并多笔同股持仓
+      const first = group[0];
+      let totalHand = 0;
+      let totalCost = 0;
+      for (const g of group) {
+        totalHand += g.shareHand ?? 0;
+        totalCost += g.cost;
+      }
+      merged.push({
+        ...first,
+        shareHand: totalHand,
+        cost: totalCost,
+        downPayment: totalCost,
+        marketValue: Math.round(totalHand * STOCK_LOT_SIZE * (first.singlePrice ?? 0)),
+        heldMonths: Math.max(...group.map((g) => g.heldMonths ?? 0)),
+      });
+    }
+  }
+
+  return [...nonStock, ...merged];
 }

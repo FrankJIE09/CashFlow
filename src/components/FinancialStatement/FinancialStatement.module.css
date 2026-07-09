@@ -437,3 +437,73 @@
   transform: translateY(3px);
   box-shadow: 0 0 0 #1f618d;
 }
+
+/* ── DCA 定投管理 ── */
+.dcaPlanCard {
+  background: #fff;
+  border: 2px solid #D5F5E3;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.dcaPlanHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.dcaPlanName {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.dcaStatus {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dcaActive {
+  background: #D5F5E3;
+  color: #1e8449;
+}
+
+.dcaPaused {
+  background: #fdebd0;
+  color: #b9770e;
+}
+
+.dcaPlanDetails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--color-text-light);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.dcaPlanActions {
+  display: flex;
+  gap: 8px;
+}
+
+.dcaToggleBtn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: #D5F5E3;
+  color: #1e8449;
+}
+
+.dcaDeleteBtn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: #fadbd8;
+  color: #c0392b;
+}
